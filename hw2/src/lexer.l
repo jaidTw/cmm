@@ -75,9 +75,9 @@ RWVoid	    "void"
 RWWhile	    "while
 
 Int_constant {digit}+
-Float_constant {digit}\.{digit}([Ee][+-]?{digit})?
+Float_constant {digit}+\.|({digit}*\.{digit}+([Ee][+-]?{digit}+)?)
 String_constant \"([^\n"]|(\\\"))*\"
-comment (\/\*)([^*]|\*[^/])*(\*\/)
+comment \/\*([^*]|\*+[^*/])*\*+\/
 
 /* You need to define the following RE's 
 Float_constant
@@ -124,8 +124,8 @@ error    .
 {WS}            {}
 {RWInt}         { return INT;  }
 {RWFloat}       { return FLOAT; }
-{Int_constant}  { return INTLIT; }
-{Float_constant}  { return FLOATLIT; }
+{Int_constant}  { printf("scanned int %s\n", yytext); return INTLIT; }
+{Float_constant}  { printf("scanned float %s\n", yytext); return FLOATLIT; }
 {String_constant}  { printf("scanned string %s\n", yytext); return STRLIT; }
 {comment}	{ printf("%s\n", yytext); }
 {ID}            {
