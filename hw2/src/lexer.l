@@ -22,7 +22,7 @@ void 	 printSymTab();
 
 /* Literals */
 #define INTLIT		10
-#define FLOATIT 	11
+#define FLOATLIT 	11
 #define STRLIT		12
 
 /* Identifiers */
@@ -122,26 +122,29 @@ error    .
 %%
 
 {WS}            {}
-{RWInt}         {/* return INT; */ }
-{RWFloat}       {/* return FLOAT; */}
-{ID}            { 
+{RWInt}         { return INT;  }
+{RWFloat}       { return FLOAT; }
+{Int_constant}  { return INTLIT; }
+{Float_constant}  { return FLOATLIT; }
+{String_constant}  { return STRLIT; }
+{ID}            {
 			ptr = lookup(yytext);
 			if (ptr == NULL)
-			     insertID(yytext);	
-			else 
+			     insertID(yytext);
+			else
 			     ptr->counter++;
 		}
 
-{OP_assign}     { /* return OP_ASSIGN; */ }
-{OP_or}         {/* return OP_OR; */ }
-{DL_lparen}     {/* return MK_LPAREN; */ }
-{DL_rparen}     {/* return MK_RPAREN; */ }
-{DL_lbrace}     {/* return MK_LBRACE; */ }
-{DL_rbrace}     {/* return MK_RBRACE; */ }
+{OP_assign}     { return OP_ASSIGN; }
+{OP_or}         { return OP_OR; }
+{DL_lparen}     { return MK_LPAREN; }
+{DL_rparen}     { return MK_RPAREN; }
+{DL_lbrace}     { return MK_LBRACE; }
+{DL_rbrace}     { return MK_RBRACE; }
 {DL_comma}      {}
 {DL_semicol}    {}
 {newline}       linenumber += 1;
-{error}         printf("ERR \n");/* return ERROR; */
+{error}         { printf("%d:Error : Unrecognized token \"%s\" \n", linenumber, yytext); return ERROR; }
 
 
 %%
@@ -153,7 +156,7 @@ main(int argc, char **argv)
       yyin = fopen(argv[0], "r");
    else
       yyin = stdin;
-   yylex();
+   while(yylex() > 0);
    printSymTab();
 }
 
