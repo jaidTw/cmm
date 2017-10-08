@@ -1,1 +1,4 @@
 .*.un~
+lex.yy.c
+*.o
+scanner
