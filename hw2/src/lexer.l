@@ -53,7 +53,7 @@ void 	 printSymTab();
 #define MK_RBRACK	33
 #define MK_SEMICOL	34
 #define MK_COMMA	35
-#define MK_DOT		.
+#define MK_DOT		36
 #define ERROR 		100
 
 
@@ -76,8 +76,8 @@ RWWhile	    "while
 
 Int_constant {digit}+
 Float_constant {digit}\.{digit}([Ee][+-]?{digit})?
-String_constant \"[^\n]*\"
-comment (\/\*)([^*]|\*[^\/])*(\*\/)
+String_constant \"([^\n"]|(\\\"))*\"
+comment (\/\*)([^*]|\*[^/])*(\*\/)
 
 /* You need to define the following RE's 
 Float_constant
@@ -126,7 +126,7 @@ error    .
 {RWFloat}       { return FLOAT; }
 {Int_constant}  { return INTLIT; }
 {Float_constant}  { return FLOATLIT; }
-{String_constant}  { return STRLIT; }
+{String_constant}  { printf("scanned string %s\n", yytext); return STRLIT; }
 {comment}	{ printf("%s\n", yytext); }
 {ID}            {
 			ptr = lookup(yytext);
@@ -156,6 +156,7 @@ error    .
 {DL_rbrace}     { return MK_RBRACE; }
 {DL_comma}      { return MK_COMMA; }
 {DL_semicol}    { return MK_SEMICOL;}
+{DL_dot}	{ return MK_DOT;}
 {newline}       linenumber += 1;
 {error}         { printf("%d:Error : Unrecognized token \"%s\" \n", linenumber, yytext); return ERROR; }
 
