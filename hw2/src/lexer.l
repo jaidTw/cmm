@@ -33,10 +33,10 @@ void 	 printSymTab();
 #define OP_OR 		15
 #define OP_AND		16
 #define OP_NOT		17
-#define OP_LT		18
-#define OP_GT		19
-#define OP_L		20
-#define OP_G		21
+#define OP_LE		18
+#define OP_GE		19
+#define OP_LT		20
+#define OP_GT		21
 #define OP_NE		22
 #define OP_EQ		23
 #define OP_MINUS	24
@@ -77,7 +77,7 @@ RWWhile	    "while
 Int_constant {digit}+
 Float_constant {digit}\.{digit}([Ee][+-]?{digit})?
 String_constant \"[^\n]*\"
-comment \/\*.*\*\/
+comment (\/\*)([^*]|\*[^\/])*(\*\/)
 
 /* You need to define the following RE's 
 Float_constant
@@ -89,10 +89,10 @@ OP_assign        "="
 OP_or   "||"
 OP_and   "&&"
 OP_not   "!"
-OP_lt   "<="
-OP_gt   ">="
-OP_l   "<"
-OP_g   ">"
+OP_le   "<="
+OP_ge   ">="
+OP_lt   "<"
+OP_gt   ">"
 OP_ne   "!="
 OP_eq   "=="
 OP_plus   "+"
@@ -127,6 +127,7 @@ error    .
 {Int_constant}  { return INTLIT; }
 {Float_constant}  { return FLOATLIT; }
 {String_constant}  { return STRLIT; }
+{comment}	{ printf("%s\n", yytext); }
 {ID}            {
 			ptr = lookup(yytext);
 			if (ptr == NULL)
@@ -137,12 +138,24 @@ error    .
 
 {OP_assign}     { return OP_ASSIGN; }
 {OP_or}         { return OP_OR; }
+{OP_and}        { return OP_AND; }
+{OP_not}        { return OP_NOT; }
+{OP_le}         { return OP_LE; }
+{OP_ge}         { return OP_GE; }
+{OP_lt}         { return OP_LT; }
+{OP_gt}         { return OP_GT; }
+{OP_ne}         { return OP_NE; }
+{OP_eq}         { return OP_EQ; }
+{OP_plus}       { return OP_PLUS; }
+{OP_minus}      { return OP_MINUS; }
+{OP_mul}        { return OP_MUL; }
+{OP_div}        { return OP_DIV; }
 {DL_lparen}     { return MK_LPAREN; }
 {DL_rparen}     { return MK_RPAREN; }
 {DL_lbrace}     { return MK_LBRACE; }
 {DL_rbrace}     { return MK_RBRACE; }
-{DL_comma}      {}
-{DL_semicol}    {}
+{DL_comma}      { return MK_COMMA; }
+{DL_semicol}    { return MK_SEMICOL;}
 {newline}       linenumber += 1;
 {error}         { printf("%d:Error : Unrecognized token \"%s\" \n", linenumber, yytext); return ERROR; }
 
