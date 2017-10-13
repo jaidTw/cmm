@@ -9,6 +9,7 @@
 
 symtab * hash_table[TABLE_SIZE];
 extern int linenumber;
+int entry_count = 0;
 
 int HASH(char * str){
 	int idx=0;
@@ -40,6 +41,7 @@ symtab * lookup(char *name){
 
 
 void insertID(char *name){
+	entry_count++;
 	int hash_key;
 	symtab* ptr;
 	symtab* symptr=(symtab*)malloc(sizeof(symtab));	
@@ -71,19 +73,38 @@ void printSym(symtab* ptr)
 	    printf(" References = %d \n", ptr->counter);
 }
 
+static int compare(const void* left, const void* right)
+{
+	return strcmp((*(const symtab**)left)->lexeme,
+    			  (*(const symtab**)right)->lexeme);
+}
+
 void printSymTab()
 {
-    int i;
+	symtab **nodelist = NULL;
+	nodelist = malloc(entry_count * sizeof(symtab*));
+	int idx = 0;
+	int i;
     printf("----- Symbol Table ---------\n");
     for (i=0; i<TABLE_SIZE; i++)
     {
         symtab* symptr;
-	symptr = hash_table[i];
-	while (symptr != NULL)
-	{
+		symptr = hash_table[i];
+		while (symptr != NULL)
+		{
             printf("====>  index = %d \n", i);
-	    printSym(symptr);
-	    symptr=symptr->front;
+			printSym(symptr);
+			
+			nodelist[idx] = symptr;
+			idx++;
+
+			symptr=symptr->front;
+		}
 	}
-    }
+	
+	qsort(nodelist, idx, sizeof(symtab*), compare);
+	printf("Frequency of identifiers:\n");
+	for(i=0; i < idx; i++)
+		printf("%s\t%d\n", nodelist[i]->lexeme, nodelist[i]->counter);
+
 }

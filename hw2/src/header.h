@@ -1,5 +1,5 @@
 struct symtab{
-	char lexeme[256];
+	char lexeme[257];
 	struct symtab *front;
 	struct symtab *back;
 	int line;

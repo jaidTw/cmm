@@ -72,7 +72,7 @@ RWInt	    "int"
 RWFloat	    "float"
 RWFor	    "for"
 RWVoid	    "void"
-RWWhile	    "while
+RWWhile	    "while"
 
 Int_constant {digit}+
 Float_constant {digit}+\.|({digit}*\.{digit}+([Ee][+-]?{digit}+)?)
