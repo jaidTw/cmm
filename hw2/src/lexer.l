@@ -75,7 +75,7 @@ RWVoid	    "void"
 RWWhile	    "while"
 
 Int_constant {digit}+
-Float_constant {digit}+\.|({digit}*\.{digit}+([Ee][+-]?{digit}+)?)
+Float_constant -?({digit}+\.|({digit}*\.{digit}+([Ee][+-]?{digit}+)?))
 String_constant \"([^\n"]|(\\\"))*\"
 comment \/\*([^*]|\*+[^*/])*\*+\/
 
@@ -124,9 +124,9 @@ error    .
 {WS}            {}
 {RWInt}         { return INT;  }
 {RWFloat}       { return FLOAT; }
-{Int_constant}  { printf("scanned int %s\n", yytext); return INTLIT; }
-{Float_constant}  { printf("scanned float %s\n", yytext); return FLOATLIT; }
-{String_constant}  { printf("scanned string %s\n", yytext); return STRLIT; }
+{Int_constant}  { /*printf("scanned int %s\n", yytext);*/ return INTLIT; }
+{Float_constant}  { /*printf("scanned float %s\n", yytext);*/ return FLOATLIT; }
+{String_constant}  { /*printf("scanned string %s\n", yytext);*/ return STRLIT; }
 {comment}	{ printf("%s\n", yytext); }
 {ID}            {
 			ptr = lookup(yytext);
@@ -158,7 +158,7 @@ error    .
 {DL_semicol}    { return MK_SEMICOL;}
 {DL_dot}	{ return MK_DOT;}
 {newline}       linenumber += 1;
-{error}         { printf("%d:Error : Unrecognized token \"%s\" \n", linenumber, yytext); return ERROR; }
+{error}         { printf("ERR %s\n", yytext); exit(0); }
 
 
 %%

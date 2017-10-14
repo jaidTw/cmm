@@ -85,15 +85,15 @@ void printSymTab()
 	nodelist = malloc(entry_count * sizeof(symtab*));
 	int idx = 0;
 	int i;
-    printf("----- Symbol Table ---------\n");
+    /*printf("----- Symbol Table ---------\n");*/
     for (i=0; i<TABLE_SIZE; i++)
     {
         symtab* symptr;
 		symptr = hash_table[i];
 		while (symptr != NULL)
 		{
-            printf("====>  index = %d \n", i);
-			printSym(symptr);
+            /*printf("====>  index = %d \n", i);
+			printSym(symptr);*/
 			
 			nodelist[idx] = symptr;
 			idx++;
