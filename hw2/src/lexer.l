@@ -74,8 +74,8 @@ RWFor	    "for"
 RWVoid	    "void"
 RWWhile	    "while"
 
-Int_constant {digit}+
-Float_constant -?({digit}+\.|({digit}*\.{digit}+([Ee][+-]?{digit}+)?))
+Int_constant ("+"|"-")?{digit}+
+Float_constant ("+"|"-")?({digit}+\.|({digit}*\.{digit}+([Ee][+-]?{digit}+)?))
 String_constant \"([^\n"]|(\\\"))*\"
 comment \/\*([^*]|\*+[^*/])*\*+\/
 
