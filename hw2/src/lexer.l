@@ -154,6 +154,8 @@ error    .
 {DL_rparen}     { return MK_RPAREN; }
 {DL_lbrace}     { return MK_LBRACE; }
 {DL_rbrace}     { return MK_RBRACE; }
+{DL_lbrack}     { return MK_LBRACK; }
+{DL_rbrack}     { return MK_RBRACK; }
 {DL_comma}      { return MK_COMMA; }
 {DL_semicol}    { return MK_SEMICOL;}
 {DL_dot}	{ return MK_DOT;}
