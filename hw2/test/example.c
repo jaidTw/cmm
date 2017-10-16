@@ -10,6 +10,7 @@ int main()
 	/* 2: this is a 3-line
 	 	comment
 	*/
+    @
 	n = read();
 	abc = n + 1;
 	def = abc * abc;

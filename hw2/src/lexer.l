@@ -54,7 +54,7 @@ void 	 printSymTab();
 #define MK_SEMICOL	34
 #define MK_COMMA	35
 #define MK_DOT		36
-#define ERROR 		100
+#define ERROR 		-1
 
 
 %}
@@ -122,8 +122,15 @@ error    .
 %%
 
 {WS}            {}
+{RWReturn}      { return RETURN; }
+{RWTypedef}     { return TYPEDEF; }
+{RWIf}	        { return IF; }
+{RWElse}	    { return ELSE; }
 {RWInt}         { return INT;  }
 {RWFloat}       { return FLOAT; }
+{RWFor}	        { return FOR; }
+{RWVoid}	    { return VOID; }
+{RWWhile}	    { return WHILE; }
 {Int_constant}  { /*printf("scanned int %s\n", yytext);*/ return INTLIT; }
 {Float_constant}  { /*printf("scanned float %s\n", yytext);*/ return FLOATLIT; }
 {String_constant}  { /*printf("scanned string %s\n", yytext);*/ return STRLIT; }
@@ -160,7 +167,7 @@ error    .
 {DL_semicol}    { return MK_SEMICOL;}
 {DL_dot}	{ return MK_DOT;}
 {newline}       linenumber += 1;
-{error}         { printf("ERR %s\n", yytext); exit(0); }
+{error}         { printf("ERR %s\n", yytext); return ERROR; }
 
 
 %%
@@ -172,7 +179,7 @@ main(int argc, char **argv)
       yyin = fopen(argv[0], "r");
    else
       yyin = stdin;
-   while(yylex() > 0);
+   while(yylex() != ERROR);
    printSymTab();
 }
 
