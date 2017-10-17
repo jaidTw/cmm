@@ -179,7 +179,7 @@ main(int argc, char **argv)
       yyin = fopen(argv[0], "r");
    else
       yyin = stdin;
-   while(yylex() != ERROR);
+   while(yylex() > 0);
    printSymTab();
 }
 
