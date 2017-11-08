@@ -429,10 +429,12 @@ cfactor:	CONST
 init_id_list	: init_id
                     {
                         /*TODO*/
+                        $$ = $1;
                     }
                 | init_id_list MK_COMMA init_id
                     {
                         /*TODO*/
+                        $$ = makeSibling($1, $3);
                     }
                 ;
 
@@ -527,7 +529,8 @@ stmt		: MK_LBRACE block MK_RBRACE
 assign_expr_list : nonempty_assign_expr_list
                      {
                         /*TODO*/
-                        $$ = $1;
+                        $$ = Allocate(NONEMPTY_ASSIGN_EXPR_LIST_NODE);
+                        makeChild($$, $1);
                      }
                  |
                      {
@@ -632,7 +635,8 @@ rel_op		: OP_EQ
 relop_expr_list	: nonempty_relop_expr_list
                     {
                         /*TODO*/
-                        $$ = $1;
+                        $$ = Allocate(NONEMPTY_RELOP_EXPR_LIST_NODE);
+                        makeChild($$, $1);
                     }
                 |
                     {
