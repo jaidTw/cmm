@@ -493,7 +493,7 @@ stmt		: MK_LBRACE block MK_RBRACE
                 {
                     /*TODO*/
                     $$ = makeStmtNode(IF_STMT);
-                    makeFamily($$, 2, $3, $5);
+                    makeFamily($$, 3, $3, $5, Allocate(NUL_NODE));
                 }
             | IF MK_LPAREN relop_expr MK_RPAREN stmt ELSE stmt /*TODO: | If then else */
                 {
