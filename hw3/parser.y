@@ -471,7 +471,7 @@ stmt		: MK_LBRACE block MK_RBRACE
                     /*TODO*/
                     $$ = $2;
                 }
-            | WHILE MK_LPAREN relop_expr_list MK_RPAREN stmt /*TODO: | While Statement */
+            | WHILE MK_LPAREN nonempty_relop_expr_list MK_RPAREN stmt /*TODO: | While Statement */
                 {
                     /*TODO*/
                     $$ = makeStmtNode(WHILE_STMT);
