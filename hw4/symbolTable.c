@@ -25,8 +25,8 @@ SymbolTableEntry* newSymbolTableEntry(int nestingLevel)
     symbolTableEntry->nextInSameLevel = NULL;
     symbolTableEntry->sameNameInOuterLevel = NULL;
     symbolTableEntry->attribute = NULL;
-    symbolTableEntry->name_index = 0;
-    symbolTableEntry->name_length = 0;
+    symbolTableEntry->nameIndex = 0;
+    symbolTableEntry->nameLength = 0;
     symbolTableEntry->nestingLevel = nestingLevel;
     return symbolTableEntry;
 }

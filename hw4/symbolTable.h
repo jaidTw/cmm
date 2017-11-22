@@ -80,8 +80,8 @@ typedef struct SymbolTableEntry
     struct SymbolTableEntry* nextInSameLevel;
     struct SymbolTableEntry* sameNameInOuterLevel;
 
-    int name_index;
-    int name_length;
+    int nameIndex;
+    int nameLength;
     SymbolAttribute* attribute;
     int nestingLevel;
 
