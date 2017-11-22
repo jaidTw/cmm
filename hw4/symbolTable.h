@@ -12,7 +12,9 @@
 #define SYMBOL_TABLE_SYS_LIB_READ "read"
 #define SYMBOL_TABLE_SYS_LIB_FREAD "fread"
 #define HASH_TABLE_SIZE 256
-
+#define TABLE_STACK_SIZE 16
+#define NAMESPACE_SEGMENT_SIZE 256
+#define NAMESPACE_SIZE 16
 
 typedef enum SymbolAttributeKind
 {
@@ -78,7 +80,8 @@ typedef struct SymbolTableEntry
     struct SymbolTableEntry* nextInSameLevel;
     struct SymbolTableEntry* sameNameInOuterLevel;
 
-    char* name;
+    int name_index;
+    int name_length;
     SymbolAttribute* attribute;
     int nestingLevel;
 
@@ -92,6 +95,20 @@ typedef struct SymbolTable
     int scopeDisplayElementCount;
 } SymbolTable;
 
+typedef struct TableStack
+{
+    SymbolTable* stack[TABLE_STACK_SIZE];
+    SymbolTableEntry** scopeDisplay;
+    int currentLevel;
+    int scopeDisplayElementCount;
+    int top;
+} TableStack;
+
+typedef struct NameSpace {
+    char *segments[NAMESPACE_SIZE];
+    int size;
+    int currentOffset;
+} NameSpace;
 
 void initializeSymbolTable();
 void symbolTableEnd();
@@ -101,5 +118,11 @@ void removeSymbol(char* symbolName);
 int declaredLocally(char* symbolName);
 void openScope();
 void closeScope();
+
+void initializeNameSpace();
+void newSegment();
+int enterSymbolNS(char *symbolName);
+char *currentEmpty();
+int makeIndex(int offset, int segment);
 
 #endif
