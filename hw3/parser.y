@@ -9,6 +9,8 @@
 #include "header.h"
 int linenumber = 1;
 AST_NODE *prog;
+int yylex(void);
+int yyerror(char *);
 
 extern int g_anyErrorOccur;
 
