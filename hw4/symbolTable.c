@@ -4,7 +4,8 @@
 #include <stdio.h>
 // This file is for reference only, you are not required to follow the implementation. //
 
-#define ERROR(x) { fprintf(stderr, x); exit(-1);}
+#define ERROR(x) { fprintf(stderr, (x)); exit(-1);}
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 int HASH(char * str) {
     int idx=0;
@@ -44,6 +45,17 @@ void removeFromHashChain(int hashIndex, SymbolTableEntry* entry)
 
 void enterIntoHashChain(int hashIndex, SymbolTableEntry* entry)
 {
+    SymbolTableEntry **head = &(currentScope()->hashTable[hashIndex]);
+    if(!*head) {
+        *head = entry;
+        return;
+    }
+
+    while((*head)->nextInHashChain != NULL)
+        head = &((*head)->nextInHashChain);
+
+    (*head)->nextInHashChain = entry;
+    entry->prevInHashChain = *head;
 }
 
 void initializeSymbolTable()
@@ -59,22 +71,24 @@ void symbolTableEnd()
 SymbolTableEntry* retrieveSymbol(char* symbolName)
 {
     int hashIndex = HASH(symbolName);
+    int len = strlen(symbolName);
     int i = 0; 
-    SymbolTableEntry *entry = NULL;
-    for(i = symbolTable.currentLevel; i >= 0; i--) {
+    for(i = symbolTable.currentLevel; i >= 0; i--)
+    {
         SymbolTable *table = symbolTable.stack[i];
-        SymbolTableEntry *e = table->hashTable[hashIndex];
-        /* follow the chain */
-        /* if(found) {
-         *     entry = e
-         * }
-         */
+        SymbolTableEntry **head = &(table->hashTable[hashIndex]);
+
+        while(head != NULL)
+        {
+            SymbolTableEntry *e = *head;
+            if(!strncmp(symbolName, getName(e->nameIndex), MIN(len, e->nameLength)))
+                return e;
+
+            head = &((*head)->nextInHashChain);
+        }
     }
-    if(!entry) {
-        /* Error message : undeclared symbol */
-        exit(-1);
-    }
-    return entry;
+    /* TODO : Error message : undeclared symbol */
+    exit(-1);
 }
 
 SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
@@ -97,10 +111,16 @@ int declaredLocally(char* symbolName)
 {
 }
 
+SymbolTable* currentScope()
+{
+    return symbolTable.stack[symbolTable.currentLevel];
+}
+
 void openScope()
 {
     symbolTable.currentLevel += 1;
     symbolTable.top += 1;
+    memset(currentScope()->hashTable, 0, HASH_TABLE_SIZE * sizeof(void *));
 }
 
 void closeScope()
@@ -109,12 +129,14 @@ void closeScope()
     symbolTable.top -= 1;
 }
 
-void initializeNameSpace() {
+void initializeNameSpace()
+{
     nameSpace.size = 0;
     newSegment();
 }
 
-void newSegment() {
+void newSegment()
+{
     if(nameSpace.size >= NAMESPACE_SIZE)
         ERROR("Maximum namespace size reached.");
 
@@ -123,19 +145,22 @@ void newSegment() {
     nameSpace.currentOffset = 0;
 }
 
-int enterSymbolNS(char *symbolName) {
+int enterSymbolNS(char *symbolName)
+{
     int len = strlen(symbolName);
     if(len > NAMESPACE_SEGMENT_SIZE)
         ERROR("Symbol name exceeds segment size of namespace");
 
     int i;
-    for(i = 0; i < nameSpace.size; ++i) {
+    for(i = 0; i < nameSpace.size; ++i)
+    {
         char* p = strstr(nameSpace.segments[i], symbolName);
         if(p)
             return makeIndex(p - nameSpace.segments[i], i);
     }
 
-    if(nameSpace.currentOffset + len > NAMESPACE_SEGMENT_SIZE) {
+    if(nameSpace.currentOffset + len > NAMESPACE_SEGMENT_SIZE)
+    {
         newSegment();
     }
     strncpy(currentEmpty(), symbolName, len);
@@ -143,10 +168,17 @@ int enterSymbolNS(char *symbolName) {
     return makeIndex(nameSpace.currentOffset, nameSpace.size - 1);
 }
 
-__inline__ char *currentEmpty() {
+__inline__ char *currentEmpty()
+{
     return nameSpace.segments[nameSpace.size - 1] + nameSpace.currentOffset;
 }
 
-__inline__ int makeIndex(int offset, int segment) {
+__inline__ int makeIndex(int offset, int segment)
+{
     return offset + NAMESPACE_SEGMENT_SIZE * segment;
+}
+
+__inline__ char *getName(int index)
+{
+    return nameSpace.segments[index / NAMESPACE_SEGMENT_SIZE] + index % NAMESPACE_SEGMENT_SIZE;
 }

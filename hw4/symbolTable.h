@@ -91,8 +91,8 @@ typedef struct SymbolTableEntry
 typedef struct SymbolTable
 {
     SymbolTableEntry* hashTable[HASH_TABLE_SIZE];
-    SymbolTableEntry** scopeDisplay;
 /*
+    SymbolTableEntry** scopeDisplay;
     int currentLevel;
     int scopeDisplayElementCount;
 */
@@ -119,6 +119,7 @@ SymbolTableEntry* retrieveSymbol(char* symbolName);
 SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute);
 void removeSymbol(char* symbolName);
 int declaredLocally(char* symbolName);
+SymbolTable* currentScope();
 void openScope();
 void closeScope();
 
@@ -127,5 +128,6 @@ void newSegment();
 int enterSymbolNS(char *symbolName);
 char *currentEmpty();
 int makeIndex(int offset, int segment);
+char *getName(int index);
 
 #endif
