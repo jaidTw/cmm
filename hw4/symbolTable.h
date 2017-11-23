@@ -77,9 +77,10 @@ typedef struct SymbolTableEntry
 {
     struct SymbolTableEntry* nextInHashChain;
     struct SymbolTableEntry* prevInHashChain;
+/*
     struct SymbolTableEntry* nextInSameLevel;
     struct SymbolTableEntry* sameNameInOuterLevel;
-
+*/
     int nameIndex;
     int nameLength;
     SymbolAttribute* attribute;
@@ -91,8 +92,10 @@ typedef struct SymbolTable
 {
     SymbolTableEntry* hashTable[HASH_TABLE_SIZE];
     SymbolTableEntry** scopeDisplay;
+/*
     int currentLevel;
     int scopeDisplayElementCount;
+*/
 } SymbolTable;
 
 typedef struct TableStack
