@@ -160,12 +160,11 @@ int enterSymbolNS(char *symbolName)
     }
 
     if(nameSpace.currentOffset + len > NAMESPACE_SEGMENT_SIZE)
-    {
         newSegment();
-    }
+
     strncpy(currentEmpty(), symbolName, len);
     nameSpace.currentOffset += len;
-    return makeIndex(nameSpace.currentOffset, nameSpace.size - 1);
+    return makeIndex(nameSpace.currentOffset - len, nameSpace.size - 1);
 }
 
 __inline__ char *currentEmpty()

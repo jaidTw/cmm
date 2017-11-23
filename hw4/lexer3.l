@@ -54,7 +54,7 @@ error            .
                             linenumber++;
                         i++;
                     }
-                }	
+                }
 {kwInt}         return INT;
 {kwFloat}       return FLOAT;
 {kwVoid}		return VOID;
