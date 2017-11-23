@@ -111,6 +111,19 @@ void removeSymbol(char* symbolName)
 
 int declaredLocally(char* symbolName)
 {
+    int hashIndex = HASH(symbolName);
+    int len = strlen(symbolName);
+    SymbolTableEntry **head = &(currentScope()->hashTable[hashIndex]);
+
+    while(*head != NULL)
+    {
+        SymbolTableEntry *e = *head;
+        if(len == e->nameLength && !strncmp(symbolName, getName(e->nameIndex), e->nameLength))
+            return 1;
+
+        head = &((*head)->nextInHashChain);
+    }
+    return 0;
 }
 
 SymbolTable* currentScope()
