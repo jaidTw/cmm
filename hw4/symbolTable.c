@@ -60,8 +60,10 @@ void enterIntoHashChain(int hashIndex, SymbolTableEntry* entry)
 
 void initializeSymbolTable()
 {
+    initializeNameSpace();
     symbolTable.currentLevel = 0;
     symbolTable.top = 0;
+    memset(currentScope()->hashTable, 0, HASH_TABLE_SIZE * sizeof(void *));
 }
 
 void symbolTableEnd()
@@ -72,16 +74,16 @@ SymbolTableEntry* retrieveSymbol(char* symbolName)
 {
     int hashIndex = HASH(symbolName);
     int len = strlen(symbolName);
-    int i = 0; 
+    int i = 0;
     for(i = symbolTable.currentLevel; i >= 0; i--)
     {
-        SymbolTable *table = symbolTable.stack[i];
+        SymbolTable *table = &symbolTable.stack[i];
         SymbolTableEntry **head = &(table->hashTable[hashIndex]);
 
-        while(head != NULL)
+        while(*head != NULL)
         {
             SymbolTableEntry *e = *head;
-            if(!strncmp(symbolName, getName(e->nameIndex), MIN(len, e->nameLength)))
+            if(len == e->nameLength && !strncmp(symbolName, getName(e->nameIndex), e->nameLength))
                 return e;
 
             head = &((*head)->nextInHashChain);
@@ -113,7 +115,7 @@ int declaredLocally(char* symbolName)
 
 SymbolTable* currentScope()
 {
-    return symbolTable.stack[symbolTable.currentLevel];
+    return &symbolTable.stack[symbolTable.currentLevel];
 }
 
 void openScope()

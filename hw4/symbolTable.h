@@ -100,7 +100,7 @@ typedef struct SymbolTable
 
 typedef struct TableStack
 {
-    SymbolTable* stack[TABLE_STACK_SIZE];
+    SymbolTable stack[TABLE_STACK_SIZE];
     SymbolTableEntry** scopeDisplay;
     int currentLevel;
     int scopeDisplayElementCount;
