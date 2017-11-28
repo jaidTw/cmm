@@ -34,6 +34,7 @@ void processConstValueNode(AST_NODE* constValueNode);
 void getExprOrConstValue(AST_NODE* exprOrConstNode, int* iValue, float* fValue);
 void evaluateExprValue(AST_NODE* exprNode);
 
+void processVariableDeclListNode(AST_NODE* decl_list);
 
 typedef enum ErrorMsgKind
 {
@@ -107,13 +108,46 @@ DATA_TYPE getBiggerType(DATA_TYPE dataType1, DATA_TYPE dataType2)
     }
 }
 
-
 void processProgramNode(AST_NODE *programNode)
 {
+    if(programNode->child){
+        switch(programNode->child.nodeType){
+            case VARIABLE_DECL_LIST_NODE:
+                processVariableDeclListNode(programNode->child);
+            case DECLARATION_NODE:
+                processDeclarationNode(programNode->child);
+                break;
+            default:
+                printf("Invalid program\n");
+                exit(1);
+        }
+    }
+}
+
+void processVariableDeclListNode(AST_NODE *decl_list){
+    AST_NODE *decl = decl_list->child;
+    while(decl){
+        processDeclarationNode(decl);
+        decl = decl->rightSibling;
+    }
 }
 
 void processDeclarationNode(AST_NODE* declarationNode)
 {
+    switch(declarationNode->semantic_value.declSemanticValue.kind){
+        case VARIABLE_DECL:
+            declareIdList(declarationNode, VARIABLE_ATTRIBUTE, 0);
+            break;
+        case TYPE_DECL:
+            declareIdList(declarationNode, TYPE_ATTRIBUTE, 0);
+            break;
+        case FUNCTION_DECL:
+            declareFunction(declarationNode)
+        case FUNCTION_PARAMETER_DECL:
+        default:
+            printf("Invalid declaration type\n");
+            exit(1)
+    }
 }
 
 
@@ -121,9 +155,34 @@ void processTypeNode(AST_NODE* idNodeAsType)
 {
 }
 
+SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind)
+{
+    SymbolAttribute *temp = (SymbolAttribute*)malloc(sizeof(struct SymbolAttribute));
+    temp->attributeKind = attributeKind;
+    return temp;
+}
+
+TypeDescriptor* newTypeDesc()
 
 void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTypeAttribute, int ignoreArrayFirstDimSize)
 {
+    switch(isVariableOrTypeAttribute){
+        case VARIABLE_ATTRIBUTE:
+            AST_NODE* idNode = declarationNode->child;
+            AST_NODE* id_list = idNode->rightSibling;
+            while(id_list){
+                char *symbolName = id_list->semantic_value.identifierSemanticValue.identifierName;
+                SymbolAttribute *symbolattr = newAttribute(VARIABLE_ATTRIBUTE);
+                TypeDescriptor *typedescriptor = 
+                switch(id_list->semantic_value.identifierSemanticValue.kind){
+                    case NORMAL_ID:
+                        enterSymbol(symbolName)
+                    case ARRAY_ID:
+                    case WITH_INIT_ID:
+                }
+            }
+        case TYPE_ATTRIBUTE:
+    }
 }
 
 void checkAssignOrExpr(AST_NODE* assignOrExprRelatedNode)

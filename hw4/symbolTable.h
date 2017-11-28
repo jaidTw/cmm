@@ -130,4 +130,7 @@ char *currentEmpty();
 int makeIndex(int offset, int segment);
 char *getName(int index);
 
+SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind);
+TypeDescriptor* newTypeDesc(TypeDescriptorKind kind);
+
 #endif

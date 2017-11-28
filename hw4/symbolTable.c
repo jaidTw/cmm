@@ -58,12 +58,45 @@ void enterIntoHashChain(int hashIndex, SymbolTableEntry* entry)
     entry->prevInHashChain = *head;
 }
 
+SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind)
+{
+    SymbolAttribute *temp = (SymbolAttribute*)malloc(sizeof(struct SymbolAttribute));
+    temp->attributeKind = attributeKind;
+    return temp;
+}
+
+TypeDescriptor* newTypeDesc(TypeDescriptorKind kind)
+{
+    TypeDescriptor *temp = (TypeDescriptor*)malloc(sizeof(struct TypeDescriptor));
+    temp->kind = kind;
+    return temp;
+}
+
+FunctionSignature* newFuncSign(int n_params, Parameter* parameterList, DATA_TYPE returnType){
+    FunctionSignature *temp = (FunctionSignature*)malloc(sizeof(struct FunctionSignature));
+    temp->parametersCount = n_params;
+    temp->parameterList = parameterList;
+    temp->returnType = returnType;
+    return temp
+}
+
 void initializeSymbolTable()
 {
     initializeNameSpace();
     symbolTable.currentLevel = 0;
     symbolTable.top = 0;
     memset(currentScope()->hashTable, 0, HASH_TABLE_SIZE * sizeof(void *));
+
+    // pre-insert default data types
+    enterSymbol(SYMBOL_TABLE_INT_NAME, newAttribute(TYPE_ATTRIBUTE));
+    enterSymbol(SYMBOL_TABLE_FLOAT_NAME, newAttribute(TYPE_ATTRIBUTE));
+    enterSymbol(SYMBOL_TABLE_VOID_NAME, newAttribute(TYPE_ATTRIBUTE));
+    // pre-insert default function name
+    SymbolAttribute* read_attr = newAttribute(FUNCTION_SIGNATURE);
+    
+    enterSymbol(SYMBOL_TABLE_SYS_LIB_READ,);
+    enterSymbol(SYMBOL_TABLE_SYS_LIB_FREAD,) ;
+
 }
 
 void symbolTableEnd()
@@ -90,7 +123,7 @@ SymbolTableEntry* retrieveSymbol(char* symbolName)
         }
     }
     /* TODO : Error message : undeclared symbol */
-    exit(-1);
+    return NULL
 }
 
 SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
