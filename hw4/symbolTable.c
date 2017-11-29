@@ -62,6 +62,7 @@ SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind)
 {
     SymbolAttribute *temp = (SymbolAttribute*)malloc(sizeof(struct SymbolAttribute));
     temp->attributeKind = attributeKind;
+    // need to specify attr later
     return temp;
 }
 
@@ -69,6 +70,7 @@ TypeDescriptor* newTypeDesc(TypeDescriptorKind kind)
 {
     TypeDescriptor *temp = (TypeDescriptor*)malloc(sizeof(struct TypeDescriptor));
     temp->kind = kind;
+    // need to sepcify properties later
     return temp;
 }
 
@@ -77,7 +79,15 @@ FunctionSignature* newFuncSign(int n_params, Parameter* parameterList, DATA_TYPE
     temp->parametersCount = n_params;
     temp->parameterList = parameterList;
     temp->returnType = returnType;
-    return temp
+    return temp;
+}
+
+Parameter* newParameter(TypeDescriptor *type, char *parameterName){
+    Parameter *temp = (Parameter*)malloc(sizeof(struct Parameter));
+    temp->next = NULL;
+    temp->type = type;
+    temp->parameterName = parameterName;
+    return temp;
 }
 
 void initializeSymbolTable()
@@ -87,15 +97,22 @@ void initializeSymbolTable()
     symbolTable.top = 0;
     memset(currentScope()->hashTable, 0, HASH_TABLE_SIZE * sizeof(void *));
 
-    // pre-insert default data types
-    enterSymbol(SYMBOL_TABLE_INT_NAME, newAttribute(TYPE_ATTRIBUTE));
-    enterSymbol(SYMBOL_TABLE_FLOAT_NAME, newAttribute(TYPE_ATTRIBUTE));
-    enterSymbol(SYMBOL_TABLE_VOID_NAME, newAttribute(TYPE_ATTRIBUTE));
-    // pre-insert default function name
-    SymbolAttribute* read_attr = newAttribute(FUNCTION_SIGNATURE);
+    // pre-insert default data types: int, float, void in scope 0
+    SymbolAttribute* int_attr = newAttribute(TYPE_ATTRIBUTE);
+    int_attr->attr.typeDescriptor->properties.dataType = INT_TYPE;
+    enterSymbol(SYMBOL_TABLE_INT_NAME, int_attr);
     
-    enterSymbol(SYMBOL_TABLE_SYS_LIB_READ,);
-    enterSymbol(SYMBOL_TABLE_SYS_LIB_FREAD,) ;
+    SymbolAttribute* float_attr = newAttribute(TYPE_ATTRIBUTE);
+    float_attr->attr.typeDescriptor->properties.dataType = FLOAT_TYPE;
+    enterSymbol(SYMBOL_TABLE_FLOAT_NAME, float_attr);
+    
+    SymbolAttribute* void_attr = newAttribute(TYPE_ATTRIBUTE);
+    int_attr->attr.typeDescriptor->properties.dataType = VOID_TYPE;
+    enterSymbol(SYMBOL_TABLE_VOID_NAME, void_attr);
+    // pre-insert default function read, fread 
+    // not yet implemented
+    //enterSymbol(SYMBOL_TABLE_SYS_LIB_READ,);
+    //enterSymbol(SYMBOL_TABLE_SYS_LIB_FREAD,) ;
 
 }
 
@@ -128,6 +145,9 @@ SymbolTableEntry* retrieveSymbol(char* symbolName)
 
 SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
 {
+    if(declaredLocally(symbolName)){
+        return NULL;
+    }
     SymbolTableEntry* entry = newSymbolTableEntry(symbolTable.currentLevel);
     entry->nameLength = strlen(symbolName);
     entry->nameIndex = enterSymbolNS(symbolName);
