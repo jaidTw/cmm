@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include "header.h"
 #include "symbolTable.h"
 // This file is for reference only, you are not required to follow the implementation. //
@@ -92,7 +93,7 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
     */
 }
 
-const char* idName(AST_NODE *node){
+char* idName(AST_NODE *node){
     // just return the variable name
     return node->semantic_value.identifierSemanticValue.identifierName;
 }
@@ -185,6 +186,7 @@ void processDeclarationNode(AST_NODE* declarationNode)
             break;
         case FUNCTION_DECL:
             declareFunction(declarationNode);
+            break;
         case FUNCTION_PARAMETER_DECL:
             // impossible, we can not see function parameter decl before function decl.
             printf("Crazy AST\n");
@@ -216,71 +218,73 @@ DATA_TYPE processTypeNode(AST_NODE* idNodeAsType)
 
 void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTypeAttribute, int ignoreArrayFirstDimSize)
 {
-    switch(isVariableOrTypeAttribute){
-        case VARIABLE_ATTRIBUTE:
-            // process var decl
-            AST_NODE* type_node = declarationNode->child;
-            DATA_TYPE datatype = processTypeNode(type_node);
-            if(datatype == ERROR_TYPE){
-                printErrorMsg(type_node, SYMBOL_IS_NOT_TYPE);
-                break;
-            }
+    if(isVariableOrTypeAttribute == VARIABLE_ATTRIBUTE){
+        AST_NODE* type_node = declarationNode->child;
+        DATA_TYPE datatype = processTypeNode(type_node);
+        if(datatype == ERROR_TYPE){
+            printErrorMsg(type_node, SYMBOL_IS_NOT_TYPE);
+            return;
+        }
 
-            AST_NODE* id_list = type_node->rightSibling; 
-            while(id_list){
-                SymbolAttribute *symbolattr = newAttribute(VARIABLE_ATTRIBUTE);
-                switch(id_list->semantic_value.identifierSemanticValue.kind){
-                    case WITH_INIT_ID:
-                        AST_NODE* expr_node = id_list->child;
-                        DATA_TYPE init_type = processExprRelatedNode(expr_node);
-                        if(init_type == ERROR_TYPE){
-                            // error: invalid init value
-                            break;
-                        }
-                        if(datatype == INT_TYPE && init_type == FLOAT_TYPE){
-                            // error: can not assign float to int
-                            break;
-                        }
-                    case NORMAL_ID:
-                        TypeDescriptor* typedesc = newTypeDesc(SCALAR_TYPE_DESCRIPTOR);
-                        typedesc->properties.dataType = datatype;
-                        symbolattr->attr.typeDescriptor = typedesc;
-                        if(enterSymbol(idName(id_list), symbolattr) == NULL){
-                            printErrorMsg(id_list, SYMBOL_REDECLARE);
-                        }
+        AST_NODE* id_list = type_node->rightSibling; 
+        while(id_list){
+            AST_NODE *expr_node;
+            DATA_TYPE init_type;
+            TypeDescriptor *typedesc;
+            SymbolAttribute *symbolattr = newAttribute(VARIABLE_ATTRIBUTE);
+            switch(id_list->semantic_value.identifierSemanticValue.kind){
+                case WITH_INIT_ID:
+                    expr_node = id_list->child;
+                    init_type = processExprRelatedNode(expr_node);
+                    if(init_type == ERROR_TYPE){
+                        // error: invalid init value
                         break;
-                    case ARRAY_ID:
-                        // child: dim_decl
-                        TypeDescriptor* typedesc = newTypeDesc(ARRAY_TYPE_DESCRIPTOR);
-                        typedesc->properties.arrayProperties.elementType = datatype;
-                        processDeclDimList(id_list->child, typedesc, 0);
+                    }
+                    if(datatype == INT_TYPE && init_type == FLOAT_TYPE){
+                        // error: can not assign float to int
+                        break;
+                    }
+                case NORMAL_ID:
+                    typedesc = newTypeDesc(SCALAR_TYPE_DESCRIPTOR);
+                    typedesc->properties.dataType = datatype;
+                    symbolattr->attr.typeDescriptor = typedesc;
+                    if(enterSymbol(idName(id_list), symbolattr) == NULL){
+                        printErrorMsg(id_list, SYMBOL_REDECLARE);
+                    }
+                    break;
+                case ARRAY_ID:
+                    // child: dim_decl
+                    typedesc = newTypeDesc(ARRAY_TYPE_DESCRIPTOR);
+                    typedesc->properties.arrayProperties.elementType = datatype;
+                    processDeclDimList(id_list->child, typedesc, 0);
 
-                        symbolattr->attr.typeDescriptor = typedesc;
-                        if(enterSymbol(idName(id_list), symbolattr) == NULL){
-                            printErrorMsg(id_list, SYMBOL_REDECLARE);
-                        }
-                        break;
-                    default:
-                        printf("unexpected kind of variable\n");
-                        break;
-                }
-                id_list = id_list->rightSibling;
+                    symbolattr->attr.typeDescriptor = typedesc;
+                    if(enterSymbol(idName(id_list), symbolattr) == NULL){
+                        printErrorMsg(id_list, SYMBOL_REDECLARE);
+                    }
+                    break;
+                default:
+                    printf("unexpected kind of variable\n");
+                    break;
             }
-        case TYPE_ATTRIBUTE:
-            AST_NODE* type_node = declarationNode->child;
-            DATA_TYPE datatype = processTypeNode(type_node);
-            if(datatype == ERROR_TYPE){
-                printErrorMsg(type_node, SYMBOL_IS_NOT_TYPE);
-                break;
+            id_list = id_list->rightSibling;
+        }
+    }
+    else if(isVariableOrTypeAttribute == TYPE_ATTRIBUTE){
+        AST_NODE* type_node = declarationNode->child;
+        DATA_TYPE datatype = processTypeNode(type_node);
+        if(datatype == ERROR_TYPE){
+            printErrorMsg(type_node, SYMBOL_IS_NOT_TYPE);
+            return;
+        }
+        AST_NODE* id_list = type_node->rightSibling;
+        while(id_list){
+            if(insertType(idName(id_list), datatype) == NULL){
+                printErrorMsg(id_list, SYMBOL_REDECLARE);
             }
-            AST_NODE* id_list = type_node->rightSibling;
-            while(id_list){
-                if(insertType(idName(id_list), datatype) == NULL){
-                    printErrorMsg(id_list, SYMBOL_REDECLARE);
-                }
-                id_list = id_list->rightSibling;
-            }
-            break;
+            id_list = id_list->rightSibling;
+        }
+        return;
     }
 }
 
@@ -290,11 +294,41 @@ void checkAssignOrExpr(AST_NODE* assignOrExprRelatedNode)
 
 void checkWhileStmt(AST_NODE* whileNode)
 {
+    processExprRelatedNode(whileNode->child);
+    processStmtNode(whileNode->child->rightSibling);
 }
 
 
 void checkForStmt(AST_NODE* forNode)
 {
+    AST_NODE *cur = forNode->child;
+    AST_NODE *child;
+
+    if(cur->nodeType == NONEMPTY_ASSIGN_EXPR_LIST_NODE) {
+        child = cur->child;
+        while(child){
+            checkAssignOrExpr(child);
+            child = child->rightSibling;
+        }
+    }
+    cur = cur->rightSibling;
+    if(cur->nodeType == NONEMPTY_RELOP_EXPR_LIST_NODE) {
+        child = cur->child;
+        while(child){
+            checkAssignOrExpr(child);
+            child = child->rightSibling;
+        }
+    }
+    cur = cur->rightSibling;
+    if(cur->nodeType == NONEMPTY_ASSIGN_EXPR_LIST_NODE) {
+        child = cur->child;
+        while(child){
+            checkAssignOrExpr(child);
+            child = child->rightSibling;
+        }
+    }
+    cur = cur->rightSibling;
+    processStmtNode(cur);
 }
 
 
@@ -305,6 +339,15 @@ void checkAssignmentStmt(AST_NODE* assignmentNode)
 
 void checkIfStmt(AST_NODE* ifNode)
 {
+    AST_NODE *cur;
+    cur = ifNode->child;
+    processExprRelatedNode(cur);
+    cur = cur->rightSibling;
+    processStmtNode(cur);
+    cur = cur->rightSibling;
+    if(cur->nodeType != NUL_NODE){
+        processStmtNode(cur);
+    }
 }
 
 void checkWriteFunction(AST_NODE* functionCallNode)
@@ -323,70 +366,77 @@ DATA_TYPE processExprRelatedNode(AST_NODE* exprRelatedNode)
 {
     // exprnode, constnode, stmtnode(function call), idnode(variable reference), nullnode
     // Now I process assign_stmt together because it is more straightforward.
-    switch(exprRelatedNode->nodeType){
-        case EXPR_NODE:
-            return processExprNode(exprRelatedNode);
-        case CONST_VALUE_NODE:
-            CON_Type *const1 = exprRelatedNode->semantic_value.const1;
-            switch(const1->const_type){
-                case INTEGERC:
-                    return INT_TYPE;
-                case FLOATC:
-                    return FLOAT_TYPE;
-                case STRINGC:
-                    return CONST_STRING_TYPE;
-            }
-        case STMT_NODE:
-            switch(exprRelatedNode->semantic_value.stmtSemanticValue.kind){ 
-                case FUNCTION_CALL_STMT:
-                    return checkFunctionCall(exprRelatedNode);
-                case ASSIGN_STMT:
-                    AST_NODE *lvalue_node = exprRelatedNode->child;
-                    DATA_TYPE ldatatype = processExprRelatedNode(lvalue_node);
-                    DATA_TYPE rdatatype = processExprRelatedNode(lvalue_node->rightSibling);
-                    // what if rdatatype == ERROR_TYPE?
-                    // any error message?
-                    return ldatatype;
-            }
-        case IDENTIFIER_NODE:
-            SymbolTableEntry *id_entry = retrieveSymbol(idName(exprRelatedNode));
-            if(id_entry == NULL){
-                printErrorMsg(exprRelatedNode, SYMBOL_UNDECLARED);
-                return ERROR_TYPE;
-            }
-
-            SymbolAttribute *attr = id_entry->attribute;
-            if(attr->attributeKind != VARIABLE_ATTRIBUTE){
-                // error: symbol is not variable
-                return ERROR_TYPE;
-            }
-
-            TypeDescriptor *desc = attr->attr.typeDescriptor;
-            switch(desc->kind){
-                case SCALAR_TYPE_DESCRIPTOR:
-                    if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != NORMAL_ID) {
-                       // error: not scalar
-                       return ERROR_TYPE;
-                    }
-                    return desc->properties.dataType;
-                case ARRAY_TYPE_DESCRIPTOR:
-                    if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != ARRAY_ID) {
-                        // error: not array
-                        return ERROR_TYPE;
-                    }
-                    if(processDeclDimList(exprRelatedNode, NULL, 0) != desc->properties.arrayProperties.dimension) {
-                        printErrorMsg(exprRelatedNode, INCOMPATIBLE_ARRAY_DIMENSION);
-                        return ERROR_TYPE;
-                    }
-                    return desc->properties.arrayProperties.elementType;
-            }
-        case NUL_NODE:
-            // Maybe we don't need this?
-            return VOID_TYPE;
-        default:
-            printf("Unexpected ExprRelated Node\n");
-            return ERROR_TYPE;
+    if(exprRelatedNode->nodeType == EXPR_NODE){
+        return processExprNode(exprRelatedNode);
     }
+    else if(exprRelatedNode->nodeType == CONST_VALUE_NODE){
+        CON_Type *const1 = exprRelatedNode->semantic_value.const1;
+        switch(const1->const_type){
+            case INTEGERC:
+                return INT_TYPE;
+            case FLOATC:
+                return FLOAT_TYPE;
+            case STRINGC:
+                return CONST_STRING_TYPE;
+        }
+    }
+    else if(exprRelatedNode->nodeType == STMT_NODE){
+        AST_NODE *lvalue_node;
+        DATA_TYPE ldatatype, rdatatype;
+        switch(exprRelatedNode->semantic_value.stmtSemanticValue.kind){ 
+            case FUNCTION_CALL_STMT:
+                return checkFunctionCall(exprRelatedNode);
+            case ASSIGN_STMT:
+                lvalue_node = exprRelatedNode->child;
+                ldatatype = processExprRelatedNode(lvalue_node);
+                rdatatype = processExprRelatedNode(lvalue_node->rightSibling);
+                // what if rdatatype == ERROR_TYPE?
+                // any error message?
+                return ldatatype;
+        }
+    }
+    else if(exprRelatedNode->nodeType == IDENTIFIER_NODE){
+        SymbolTableEntry *id_entry = retrieveSymbol(idName(exprRelatedNode));
+        if(id_entry == NULL){
+            printErrorMsg(exprRelatedNode, SYMBOL_UNDECLARED);
+            return ERROR_TYPE;
+        }
+
+        SymbolAttribute *attr = id_entry->attribute;
+        if(attr->attributeKind != VARIABLE_ATTRIBUTE){
+            // error: symbol is not variable
+            return ERROR_TYPE;
+        }
+
+        TypeDescriptor *desc = attr->attr.typeDescriptor;
+        switch(desc->kind){
+            case SCALAR_TYPE_DESCRIPTOR:
+                if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != NORMAL_ID) {
+                    // error: not scalar
+                    return ERROR_TYPE;
+                }
+                return desc->properties.dataType;
+            case ARRAY_TYPE_DESCRIPTOR:
+                if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != ARRAY_ID) {
+                    // error: not array
+                    return ERROR_TYPE;
+                }
+                if(processDeclDimList(exprRelatedNode, NULL, 0) != desc->properties.arrayProperties.dimension) {
+                    printErrorMsg(exprRelatedNode, INCOMPATIBLE_ARRAY_DIMENSION);
+                    return ERROR_TYPE;
+                }
+                return desc->properties.arrayProperties.elementType;
+        }
+    }
+    else if(exprRelatedNode->nodeType == NUL_NODE){
+        // Maybe we don't need this?
+        return VOID_TYPE;
+    }
+    else{
+        printf("Unexpected ExprRelated Node\n");
+        return ERROR_TYPE;
+    }
+    return ERROR_TYPE;
 }
 
 DATA_TYPE getExprOrConstValue(AST_NODE* exprOrConstNode, int* iValue, float* fValue)
@@ -423,172 +473,173 @@ DATA_TYPE getExprOrConstValue(AST_NODE* exprOrConstNode, int* iValue, float* fVa
 
 void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
 {
-    switch(exprNode->semantic_value.exprSemanticValue.kind){
-        case BINARY_OPERATION:
-            AST_NODE* lexpr = exprNode->child;
-            AST_NODE* rexpr = lexpr->rightSibling;
-            
-            int l_int, r_int;
-            float l_float, r_float;
+    if(exprNode->semantic_value.exprSemanticValue.kind == BINARY_OPERATION){
+        AST_NODE* lexpr = exprNode->child;
+        AST_NODE* rexpr = lexpr->rightSibling;
+        
+        int l_int, r_int;
+        float l_float, r_float;
 
-            DATA_TYPE l_datatype = getExprOrConstValue(lexpr, &l_int, &l_float);
-            DATA_TYPE r_datatype = getExprOrConstValue(rexpr, &r_int, &r_float);
-            if(l_datatype == ERROR_TYPE || r_datatype == ERROR_TYPE){
-                // error message?
-                return;
+        DATA_TYPE l_datatype = getExprOrConstValue(lexpr, &l_int, &l_float);
+        DATA_TYPE r_datatype = getExprOrConstValue(rexpr, &r_int, &r_float);
+        if(l_datatype == ERROR_TYPE || r_datatype == ERROR_TYPE){
+            // error message?
+            return;
+        }
+        if(datatype == INT_TYPE){
+            assert(l_datatype == INT_TYPE);
+            assert(r_datatype == INT_TYPE);
+            int val;
+            switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp){
+                case BINARY_OP_ADD:
+                    val = l_int + r_int;
+                    break;
+                case BINARY_OP_SUB:
+                    val = l_int - r_int;
+                    break;
+                case BINARY_OP_MUL:
+                    val = l_int * r_int;
+                    break;
+                case BINARY_OP_DIV:
+                    val = l_int / r_int;
+                    break;
+                case BINARY_OP_EQ:
+                    val = (l_int == r_int);
+                    break;
+                case BINARY_OP_GE:
+                    val = (l_int >= r_int);
+                    break;
+                case BINARY_OP_LE:
+                    val = (l_int <= r_int);
+                    break;
+                case BINARY_OP_NE:
+                    val = (l_int != r_int);
+                    break;
+                case BINARY_OP_GT:
+                    val = (l_int > r_int);
+                    break;
+                case BINARY_OP_LT:
+                    val = (l_int < r_int);
+                    break;
+                case BINARY_OP_AND:
+                    val = (l_int && r_int);
+                    break;
+                case BINARY_OP_OR:
+                    val = (l_int || r_int);
+                    break;
             }
-            if(datatype == INT_TYPE){
-                assert(l_datatype == INT_TYPE);
-                assert(r_datatype == INT_TYPE);
-                int val;
-                switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp){
-                    case BINARY_OP_ADD:
-                        val = l_int + r_int;
-                        break;
-                    case BINARY_OP_SUB:
-                        val = l_int - r_int;
-                        break;
-                    case BINARY_OP_MUL:
-                        val = l_int * r_int;
-                        break;
-                    case BINARY_OP_DIV:
-                        val = l_int / r_int;
-                        break;
-                    case BINARY_OP_EQ:
-                        val = (l_int == r_int);
-                        break;
-                    case BINARY_OP_GE:
-                        val = (l_int >= r_int);
-                        break;
-                    case BINARY_OP_LE:
-                        val = (l_int <= r_int);
-                        break;
-                    case BINARY_OP_NE:
-                        val = (l_int != r_int);
-                        break;
-                    case BINARY_OP_GT:
-                        val = (l_int > r_int);
-                        break;
-                    case BINARY_OP_LT:
-                        val = (l_int < r_int);
-                        break;
-                    case BINARY_OP_AND:
-                        val = (l_int && r_int);
-                        break;
-                    case BINARY_OP_OR:
-                        val = (l_int || r_int);
-                        break;
-                }
-                exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+            exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
+            exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+        }
+        else if(datatype == FLOAT_TYPE){
+            if(l_datatype == INT_TYPE){
+                l_float = (float)l_int;
             }
-            else if(datatype == FLOAT_TYPE){
-                if(l_datatype == INT_TYPE){
-                    l_float = (float)l_int;
-                }
-                if(r_datatype == INT_TYPE){
-                    r_float == (float)r_int;
-                }
-                float val;
-                switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp) {
-                    case BINARY_OP_ADD:
-                        val = l_float + r_float;
-                        break;
-                    case BINARY_OP_SUB:
-                        val = l_float - r_float;
-                        break;
-                    case BINARY_OP_MUL:
-                        val = l_float * r_float;
-                        break;
-                    case BINARY_OP_DIV:
-                        val = l_float / r_float;
-                        break;
-                    case BINARY_OP_EQ:
-                        val = (l_float == r_float);
-                        break;
-                    case BINARY_OP_GE:
-                        val = (l_float >= r_float);
-                        break;
-                    case BINARY_OP_LE:
-                        val = (l_float <= r_float);
-                        break;
-                    case BINARY_OP_NE:
-                        val = (l_float != r_float);
-                        break;
-                    case BINARY_OP_GT:
-                        val = (l_float > r_float);
-                        break;
-                    case BINARY_OP_LT:
-                        val = (l_float < r_float);
-                        break;
-                    case BINARY_OP_AND:
-                        val = (l_float && r_float);
-                        break;
-                    case BINARY_OP_OR:
-                        val = (l_float || r_float);
-                        break;
-                }
-                exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
+            if(r_datatype == INT_TYPE){
+                r_float = (float)r_int;
             }
-        case UNARY_OPERATION:
-            AST_NODE *lexpr = exprNode->child;
-            int l_int;
-            float l_float;
-            DATA_TYPE l_datatype = getExprOrConstValue(lexpr, &l_int, &l_float);
-            if(l_datatype == ERROR_TYPE){
-                // error message?
-                return;
+            float val;
+            switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp) {
+                case BINARY_OP_ADD:
+                    val = l_float + r_float;
+                    break;
+                case BINARY_OP_SUB:
+                    val = l_float - r_float;
+                    break;
+                case BINARY_OP_MUL:
+                    val = l_float * r_float;
+                    break;
+                case BINARY_OP_DIV:
+                    val = l_float / r_float;
+                    break;
+                case BINARY_OP_EQ:
+                    val = (l_float == r_float);
+                    break;
+                case BINARY_OP_GE:
+                    val = (l_float >= r_float);
+                    break;
+                case BINARY_OP_LE:
+                    val = (l_float <= r_float);
+                    break;
+                case BINARY_OP_NE:
+                    val = (l_float != r_float);
+                    break;
+                case BINARY_OP_GT:
+                    val = (l_float > r_float);
+                    break;
+                case BINARY_OP_LT:
+                    val = (l_float < r_float);
+                    break;
+                case BINARY_OP_AND:
+                    val = (l_float && r_float);
+                    break;
+                case BINARY_OP_OR:
+                    val = (l_float || r_float);
+                    break;
             }
-            if(datatype == INT_TYPE){
-                assert(l_datatype == INT_TYPE);
-                int val;
-                switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
-                    case UNARY_OP_POSITIVE:
-                        val = l_int;
-                        break;
-                    case UNARY_OP_NEGATIVE:
-                        val = -l_int;
-                        break;
-                    case UNARY_OP_LOGICAL_NEGATION:
-                        val = (~l_int);
-                        break;
-                }
-                exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
-            }
-            else if(datatype == FLOAT_TYPE){
-                if(l_datatype == INT_TYPE){
-                    l_float = (float)l_int;
-                }
-                float val;
-                switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
-                    case UNARY_OP_POSITIVE:
-                        val = l_float;
-                        break;
-                    case UNARY_OP_NEGATIVE:
-                        val = -l_float;
-                        break;
-                    case UNARY_OP_LOGICAL_NEGATION:
-                        // Error: bit complement on float,
-                        // Maybe we need to exit immediately?
-                        break;
-                }
-                exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
-            }
+            exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
+            exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
+        }
     }
+    else if(exprNode->semantic_value.exprSemanticValue.kind == UNARY_OPERATION){
+        AST_NODE *lexpr = exprNode->child;
+        int l_int;
+        float l_float;
+        DATA_TYPE l_datatype = getExprOrConstValue(lexpr, &l_int, &l_float);
+        if(l_datatype == ERROR_TYPE){
+            // error message?
+            return;
+        }
+        if(datatype == INT_TYPE){
+            assert(l_datatype == INT_TYPE);
+            int val;
+            switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
+                case UNARY_OP_POSITIVE:
+                    val = l_int;
+                    break;
+                case UNARY_OP_NEGATIVE:
+                    val = -l_int;
+                    break;
+                case UNARY_OP_LOGICAL_NEGATION:
+                    val = (~l_int);
+                    break;
+            }
+            exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
+            exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+        }
+        else if(datatype == FLOAT_TYPE){
+            if(l_datatype == INT_TYPE){
+                l_float = (float)l_int;
+            }
+            float val;
+            switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
+                case UNARY_OP_POSITIVE:
+                    val = l_float;
+                    break;
+                case UNARY_OP_NEGATIVE:
+                    val = -l_float;
+                    break;
+                case UNARY_OP_LOGICAL_NEGATION:
+                    // Error: bit complement on float,
+                    // Maybe we need to exit immediately?
+                    break;
+            }
+            exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
+            exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
+        }
+    }
+
 }
 
 
 DATA_TYPE processExprNode(AST_NODE* exprNode)
 {
     assert(exprNode->nodeType == EXPR_NODE);
-    DATA_TYPE datatype;
+    DATA_TYPE datatype, ldatatype, rdatatype;
     switch(exprNode->semantic_value.exprSemanticValue.kind){
         case BINARY_OPERATION:
-            DATA_TYPE ldatatype = processExprRelatedNode(exprNode->child);
-            DATA_TYPE rdatatype = processExprRelatedNode(exprNode->child->rightSibling);
+            ldatatype = processExprRelatedNode(exprNode->child);
+            rdatatype = processExprRelatedNode(exprNode->child->rightSibling);
             if(ldatatype != INT_TYPE && ldatatype != FLOAT_TYPE){
                 // error: type error
                 return ERROR_TYPE;
@@ -666,16 +717,17 @@ void processBlockNode(AST_NODE* blockNode)
 {
     assert(blockNode->nodeType == BLOCK_NODE);
     AST_NODE *block = blockNode->child;
+    AST_NODE *child;
     while(block){
         switch(block->nodeType){
             case VARIABLE_DECL_LIST_NODE:
                 processVariableDeclListNode(block);
                 break;
             case STMT_LIST_NODE:
-                AST_NODE *stmt_list = block->child;
-                while(stmt_list){
-                    processStmtNode(stmt_list);
-                    stmt_list = stmt_list->rightSibling;
+                child = block->child;
+                while(child){
+                    processStmtNode(child);
+                    child = child->rightSibling;
                 }
                 break;
             default:
@@ -704,7 +756,7 @@ void processStmtNode(AST_NODE* stmtNode)
                     checkForStmt(stmtNode);
                     break;
                 case ASSIGN_STMT:
-                    checkAssignOrExpr(stmtNode);
+                    processExprRelatedNode(stmtNode);
                     break;
                 case IF_STMT:
                     checkIfStmt(stmtNode);
@@ -817,9 +869,9 @@ void declareFunction(AST_NODE* declarationNode)
             printErrorMsg(param_type_node, SYMBOL_IS_NOT_TYPE);
             // break? continue?
         }
+        TypeDescriptor *desc;
         switch(param_id_node->semantic_value.identifierSemanticValue.kind){
             case NORMAL_ID:
-                TypeDescriptor *desc;
                 desc = newTypeDesc(SCALAR_TYPE_DESCRIPTOR);
                 desc->properties.dataType = param_type;
                 attr = newAttribute(VARIABLE_ATTRIBUTE);
@@ -834,7 +886,6 @@ void declareFunction(AST_NODE* declarationNode)
                 break;
             
             case ARRAY_ID:
-                TypeDescriptor *desc;
                 desc = newTypeDesc(ARRAY_TYPE_DESCRIPTOR);
                 desc->properties.arrayProperties.elementType = param_type;
                 processDeclDimList(param_id_node, desc, 1);
@@ -849,7 +900,7 @@ void declareFunction(AST_NODE* declarationNode)
                 new_param->parameterName = idName(param_id_node);
                 break;
             default:
-                printf('Unexpected kind of variable\n');
+                printf("Unexpected kind of variable\n");
                 break;
         }
         new_param->next = NULL;
