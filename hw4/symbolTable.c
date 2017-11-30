@@ -58,37 +58,7 @@ void enterIntoHashChain(int hashIndex, SymbolTableEntry* entry)
     entry->prevInHashChain = *head;
 }
 
-SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind)
-{
-    SymbolAttribute *temp = (SymbolAttribute*)malloc(sizeof(struct SymbolAttribute));
-    temp->attributeKind = attributeKind;
-    // need to specify attr later
-    return temp;
-}
 
-TypeDescriptor* newTypeDesc(TypeDescriptorKind kind)
-{
-    TypeDescriptor *temp = (TypeDescriptor*)malloc(sizeof(struct TypeDescriptor));
-    temp->kind = kind;
-    // need to sepcify properties later
-    return temp;
-}
-
-FunctionSignature* newFuncSign(int n_params, Parameter* parameterList, DATA_TYPE returnType){
-    FunctionSignature *temp = (FunctionSignature*)malloc(sizeof(struct FunctionSignature));
-    temp->parametersCount = n_params;
-    temp->parameterList = parameterList;
-    temp->returnType = returnType;
-    return temp;
-}
-
-Parameter* newParameter(TypeDescriptor *type, char *parameterName){
-    Parameter *temp = (Parameter*)malloc(sizeof(struct Parameter));
-    temp->next = NULL;
-    temp->type = type;
-    temp->parameterName = parameterName;
-    return temp;
-}
 
 void initializeSymbolTable()
 {
@@ -96,23 +66,6 @@ void initializeSymbolTable()
     symbolTable.currentLevel = 0;
     symbolTable.top = 0;
     memset(currentScope()->hashTable, 0, HASH_TABLE_SIZE * sizeof(void *));
-
-    // pre-insert default data types: int, float, void in scope 0
-    SymbolAttribute* int_attr = newAttribute(TYPE_ATTRIBUTE);
-    int_attr->attr.typeDescriptor->properties.dataType = INT_TYPE;
-    enterSymbol(SYMBOL_TABLE_INT_NAME, int_attr);
-    
-    SymbolAttribute* float_attr = newAttribute(TYPE_ATTRIBUTE);
-    float_attr->attr.typeDescriptor->properties.dataType = FLOAT_TYPE;
-    enterSymbol(SYMBOL_TABLE_FLOAT_NAME, float_attr);
-    
-    SymbolAttribute* void_attr = newAttribute(TYPE_ATTRIBUTE);
-    int_attr->attr.typeDescriptor->properties.dataType = VOID_TYPE;
-    enterSymbol(SYMBOL_TABLE_VOID_NAME, void_attr);
-    // pre-insert default function read, fread 
-    // not yet implemented
-    //enterSymbol(SYMBOL_TABLE_SYS_LIB_READ,);
-    //enterSymbol(SYMBOL_TABLE_SYS_LIB_FREAD,) ;
 
 }
 
@@ -140,7 +93,7 @@ SymbolTableEntry* retrieveSymbol(char* symbolName)
         }
     }
     /* TODO : Error message : undeclared symbol */
-    return NULL
+    return NULL;
 }
 
 SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
