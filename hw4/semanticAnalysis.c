@@ -6,6 +6,12 @@
 #include "symbolTable.h"
 // This file is for reference only, you are not required to follow the implementation. //
 // You only need to check for errors stated in the hw4 assignment document. //
+
+#define FATAL(x) { \
+    fprintf(stderr, "Fatal : " x "\nAborted.\n"); \
+    exit(1); \
+}
+
 int g_anyErrorOccur = 0;
 
 DATA_TYPE getBiggerType(DATA_TYPE dataType1, DATA_TYPE dataType2);
@@ -37,6 +43,15 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype);
 
 void processVariableDeclListNode(AST_NODE* decl_list);
 
+void dumpNode(AST_NODE *node);
+void dumpExprNode(AST_NODE *node);
+void dumpConstNode(AST_NODE *node);
+
+static __inline__ char* getIdByNode(AST_NODE *node) {
+    // just return the variable name
+    return node->semantic_value.identifierSemanticValue.identifierName;
+}
+
 typedef enum ErrorMsgKind
 {
     SYMBOL_IS_NOT_TYPE,
@@ -65,38 +80,82 @@ typedef enum ErrorMsgKind
     PASS_SCALAR_TO_ARRAY
 } ErrorMsgKind;
 
+/*
 void printErrorMsgSpecial(AST_NODE* node1, char* name2, ErrorMsgKind errorMsgKind)
 {
     g_anyErrorOccur = 1;
     printf("Error found in line %d\n", node1->linenumber);
-    /*
+    
     switch(errorMsgKind)
     {
-    default:
         printf("Unhandled case in void printErrorMsg(AST_NODE* node, ERROR_MSG_KIND* errorMsgKind)\n");
         break;
     }
-    */
 }
+*/
 
 
 void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
 {
     g_anyErrorOccur = 1;
     printf("Error found in line %d\n", node->linenumber);
-    /*
     switch(errorMsgKind)
     {
-        printf("Unhandled case in void printErrorMsg(AST_NODE* node, ERROR_MSG_KIND* errorMsgKind)\n");
+    case SYMBOL_IS_NOT_TYPE:
+        printf("<%s> doesn't named a type.\n", getIdByNode(node));
+        break;
+    case SYMBOL_REDECLARE:
+        printf("ID <%s> redeclared.\n", getIdByNode(node));
+        break;
+    case SYMBOL_UNDECLARED:
+        printf("ID <%s> undeclared.\n", getIdByNode(node));
+        break;
+    case NOT_FUNCTION_NAME:
+        printf("ID <%s> is not a function.\n", getIdByNode(node));
+        break;
+    case TOO_FEW_ARGUMENTS:
+        printf("too few arguments to function <%s>.\n", getIdByNode(node));
+        break;
+    case TOO_MANY_ARGUMENTS:
+        printf("too many arguments to function <%s>.\n", getIdByNode(node));
+        break;
+    case RETURN_TYPE_UNMATCH:
+        printf("Incompatible return type.\n");
+        break;
+    case INCOMPATIBLE_ARRAY_DIMENSION:
+        printf("Incompatible array dimensions.\n");
+        break;
+    case ARRAY_SIZE_NOT_INT:
+        printf("Array size is not an integer.\n");
+        break;
+    case ARRAY_SIZE_NEGATIVE:
+        printf("Array size is negative.\n");
+        break;
+    case ARRAY_SUBSCRIPT_NOT_INT:
+        printf("Array subscript is not an integer.\n");
+        break;
+    /* */
+    case VOID_VARIABLE:
+        printf("ID <%s> is of type void.\n", getIdByNode(node));
+        break;
+    case TRY_TO_INIT_ARRAY:
+    case EXCESSIVE_ARRAY_DIM_DECLARATION:
+    case RETURN_ARRAY:
+    case TYPEDEF_VOID_ARRAY:
+    case PARAMETER_TYPE_UNMATCH:
+    case NOT_ASSIGNABLE:
+    case NOT_ARRAY:
+    case IS_TYPE_NOT_VARIABLE:
+    case IS_FUNCTION_NOT_VARIABLE:
+    case STRING_OPERATION:
+    case PASS_ARRAY_TO_SCALAR:
+    case PASS_SCALAR_TO_ARRAY:
+    default:
+        FATAL("Invalid ErrorMsgKind!");
         break;
     }
-    */
 }
 
-char* idName(AST_NODE *node){
-    // just return the variable name
-    return node->semantic_value.identifierSemanticValue.identifierName;
-}
 
 SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind)
 {
@@ -124,6 +183,7 @@ SymbolTableEntry* insertType(char *name, DATA_TYPE type){
 
 void semanticAnalysis(AST_NODE *root)
 {
+    // Preinsert types
     insertType(SYMBOL_TABLE_INT_NAME, INT_TYPE);
     insertType(SYMBOL_TABLE_FLOAT_NAME, FLOAT_TYPE);
     insertType(SYMBOL_TABLE_VOID_NAME, VOID_TYPE);
@@ -199,7 +259,7 @@ void processDeclarationNode(AST_NODE* declarationNode)
 
 DATA_TYPE processTypeNode(AST_NODE* idNodeAsType)
 {
-    char *type = idName(idNodeAsType);
+    char *type = getIdByNode(idNodeAsType);
     SymbolTableEntry* entry = retrieveSymbol(type);
     if(entry){
         if(entry->attribute->attributeKind != TYPE_ATTRIBUTE){
@@ -224,6 +284,8 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
         if(datatype == ERROR_TYPE){
             printErrorMsg(type_node, SYMBOL_IS_NOT_TYPE);
             return;
+        } else if(datatype == VOID_TYPE) {
+            printErrorMsg(type_node->rightSibling, VOID_VARIABLE);
         }
 
         AST_NODE* id_list = type_node->rightSibling; 
@@ -244,11 +306,19 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
                         // error: can not assign float to int
                         break;
                     }
+                    typedesc = newTypeDesc(SCALAR_TYPE_DESCRIPTOR);
+                    typedesc->properties.dataType = datatype;
+                    symbolattr->attr.typeDescriptor = typedesc;
+                    if(enterSymbol(getIdByNode(id_list), symbolattr) == NULL){
+                        printErrorMsg(id_list, SYMBOL_REDECLARE);
+                        break;
+                    }
+                    break;
                 case NORMAL_ID:
                     typedesc = newTypeDesc(SCALAR_TYPE_DESCRIPTOR);
                     typedesc->properties.dataType = datatype;
                     symbolattr->attr.typeDescriptor = typedesc;
-                    if(enterSymbol(idName(id_list), symbolattr) == NULL){
+                    if(enterSymbol(getIdByNode(id_list), symbolattr) == NULL){
                         printErrorMsg(id_list, SYMBOL_REDECLARE);
                     }
                     break;
@@ -259,7 +329,7 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
                     processDeclDimList(id_list->child, typedesc, 0);
 
                     symbolattr->attr.typeDescriptor = typedesc;
-                    if(enterSymbol(idName(id_list), symbolattr) == NULL){
+                    if(enterSymbol(getIdByNode(id_list), symbolattr) == NULL){
                         printErrorMsg(id_list, SYMBOL_REDECLARE);
                     }
                     break;
@@ -279,7 +349,7 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
         }
         AST_NODE* id_list = type_node->rightSibling;
         while(id_list){
-            if(insertType(idName(id_list), datatype) == NULL){
+            if(insertType(getIdByNode(id_list), datatype) == NULL){
                 printErrorMsg(id_list, SYMBOL_REDECLARE);
             }
             id_list = id_list->rightSibling;
@@ -290,6 +360,20 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
 
 void checkAssignOrExpr(AST_NODE* assignOrExprRelatedNode)
 {
+    switch(assignOrExprRelatedNode->nodeType) {
+        /* only identifier */
+        case IDENTIFIER_NODE:
+            processVariableLValue(assignOrExprRelatedNode);
+            break;
+        /* Assignment */
+        case STMT_NODE:
+            processStmtNode(assignOrExprRelatedNode);
+            break;
+        /* Relop Expr */
+        case EXPR_NODE:
+            processExprRelatedNode(assignOrExprRelatedNode);
+            break;
+    }
 }
 
 void checkWhileStmt(AST_NODE* whileNode)
@@ -393,10 +477,13 @@ DATA_TYPE processExprRelatedNode(AST_NODE* exprRelatedNode)
                 // what if rdatatype == ERROR_TYPE?
                 // any error message?
                 return ldatatype;
+            default:
+                /* TODO */
+                return INT_TYPE;
         }
     }
     else if(exprRelatedNode->nodeType == IDENTIFIER_NODE){
-        SymbolTableEntry *id_entry = retrieveSymbol(idName(exprRelatedNode));
+        SymbolTableEntry *id_entry = retrieveSymbol(getIdByNode(exprRelatedNode));
         if(id_entry == NULL){
             printErrorMsg(exprRelatedNode, SYMBOL_UNDECLARED);
             return ERROR_TYPE;
@@ -628,7 +715,6 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
             exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
         }
     }
-
 }
 
 
@@ -672,6 +758,7 @@ DATA_TYPE processExprNode(AST_NODE* exprNode)
                     evaluateExprValue(exprNode, datatype);
                     break;
             }
+            break;
         case UNARY_OPERATION:
             // negation or logical negation
             datatype = processExprRelatedNode(exprNode->child);
@@ -696,6 +783,10 @@ DATA_TYPE processExprNode(AST_NODE* exprNode)
 
 void processVariableLValue(AST_NODE* idNode)
 {
+    SymbolTableEntry *entry = retrieveSymbol(getIdByNode(idNode));
+    if(entry == NULL) {
+        printErrorMsg(idNode, SYMBOL_UNDECLARED);
+    }
 }
 
 void processVariableRValue(AST_NODE* idNode)
@@ -771,6 +862,10 @@ void processStmtNode(AST_NODE* stmtNode)
                     printf("unexpected stmt type\n");
                     break;
             }
+            break;
+        default:
+            printf("unexpected node type\n");
+            break;
     }
 }
 
@@ -797,7 +892,7 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
             int size;
             if(idNode->nodeType == CONST_VALUE_NODE){
                 if(idNode->semantic_value.const1->const_type != INTEGERC){
-                    printErrorMsg(idNode, ARRAY_SUBSCRIPT_NOT_INT);
+                    printErrorMsg(idNode, ARRAY_SIZE_NOT_INT);
                     size = -2;
                 }
                 else{
@@ -806,7 +901,7 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
             }
             else if(idNode->nodeType == EXPR_NODE){
                 if(processExprRelatedNode(idNode) != INT_TYPE){
-                    printErrorMsg(idNode, ARRAY_SUBSCRIPT_NOT_INT);
+                    printErrorMsg(idNode, ARRAY_SIZE_NOT_INT);
                     size = -2;
                 }
                 else{
@@ -848,7 +943,7 @@ void declareFunction(AST_NODE* declarationNode)
 
     SymbolAttribute* attr = newAttribute(FUNCTION_SIGNATURE);
     attr->attr.functionSignature = func;
-    if(enterSymbol(idName(name_node), attr) == NULL){
+    if(enterSymbol(getIdByNode(name_node), attr) == NULL){
         printErrorMsg(name_node, SYMBOL_REDECLARE);
         return;
     }
@@ -857,7 +952,7 @@ void declareFunction(AST_NODE* declarationNode)
     
     func->parametersCount = 0;
     AST_NODE *param_list = param_node->child;
-    Parameter *new_param, *last_param;
+    Parameter *new_param = NULL, *last_param = NULL;
     while(param_list){
         func->parametersCount += 1;
         new_param = (Parameter*)malloc(sizeof(struct Parameter));
@@ -877,12 +972,12 @@ void declareFunction(AST_NODE* declarationNode)
                 attr = newAttribute(VARIABLE_ATTRIBUTE);
                 attr->attr.typeDescriptor = desc;
                 
-                if(enterSymbol(idName(param_id_node), attr) == NULL){
+                if(enterSymbol(getIdByNode(param_id_node), attr) == NULL){
                   printErrorMsg(param_id_node, SYMBOL_REDECLARE);
                   break ;
                 }
                 new_param->type = desc;
-                new_param->parameterName = idName(param_id_node);
+                new_param->parameterName = getIdByNode(param_id_node);
                 break;
             
             case ARRAY_ID:
@@ -892,12 +987,12 @@ void declareFunction(AST_NODE* declarationNode)
                 attr = newAttribute(VARIABLE_ATTRIBUTE);
                 attr->attr.typeDescriptor = desc;
                 
-                if(enterSymbol(idName(param_id_node), attr) == NULL){
+                if(enterSymbol(getIdByNode(param_id_node), attr) == NULL){
                   printErrorMsg(param_id_node, SYMBOL_REDECLARE);
                   break;
                 }
                 new_param->type = desc;
-                new_param->parameterName = idName(param_id_node);
+                new_param->parameterName = getIdByNode(param_id_node);
                 break;
             default:
                 printf("Unexpected kind of variable\n");
@@ -917,4 +1012,129 @@ void declareFunction(AST_NODE* declarationNode)
     processBlockNode(block_node);
     closeScope();
     return;
+}
+
+void dumpNode(AST_NODE *node) {
+  printf("====START====\n");
+  switch(node->nodeType) {
+  case EXPR_NODE:
+      dumpExprNode(node);
+      break;
+  case CONST_VALUE_NODE:
+      dumpConstNode(node);
+      break;
+  case STMT_NODE:
+      dumpStmtNode(node);
+      break;
+  case IDENTIFIER_NODE:
+      printf("Id Node\n");
+      break;
+  case NUL_NODE:
+      printf("Nul Node\n");
+      break;
+  case PROGRAM_NODE:
+      printf("Program Node\n");
+      break;
+  case DECLARATION_NODE:
+      printf("Declaration Node\n");
+      break;
+  case BLOCK_NODE:
+      printf("Block Node\n");
+      break;
+  case NONEMPTY_ASSIGN_EXPR_LIST_NODE:
+      printf("Nonempty Assign Expr List Node\n");
+      break;
+  case NONEMPTY_RELOP_EXPR_LIST_NODE:
+      printf("Nonempty Relop Expr List Node\n");
+      break;
+  default:
+      break;
+  }
+  printf("=====END=====\n");
+}
+void dumpExprNode(AST_NODE *node) {
+    printf("Expr Node\n");
+
+    EXPRSemanticValue expr = node->semantic_value.exprSemanticValue;
+    printf("Operation Kind : %s\n", expr.kind == BINARY_OPERATION ? "Binary" : "Unary");
+    switch(expr.op.binaryOp) {
+        case BINARY_OP_ADD:
+            printf("Operator : +\n");
+            break;
+        case BINARY_OP_MUL:
+            printf("Operator : *\n");
+            break;
+        case BINARY_OP_SUB:
+            printf("Operator : -\n");
+            break;
+        case BINARY_OP_DIV:
+            printf("Operator : /\n");
+            break;
+        default:
+            break;
+    }
+    switch(node->dataType) {
+        case INT_TYPE:
+            printf("Type : INT_TYPE\n");
+            if(expr.isConstEval) {
+                printf("Value : %d\n",expr.constEvalValue.iValue);
+            }
+            break;
+        case FLOAT_TYPE:
+            printf("Type : FLOAT_TYPE\n");
+            if(expr.isConstEval) {
+                printf("Value : %lf\n",expr.constEvalValue.fValue);
+            }
+            break;
+        case VOID_TYPE:
+            printf("Type : VOID_TYPE\n");
+            break;
+        case INT_PTR_TYPE:
+            printf("Type : INT_PTR_TYPE\n");
+            break;
+        case FLOAT_PTR_TYPE:
+            printf("Type : FLOAT_PTR_TYPE\n");
+            break;
+        case CONST_STRING_TYPE:
+            printf("Type : CONST_STRING_TYPE\n");
+            break;
+        case NONE_TYPE:
+            printf("Type : NONE_TYPE\n");
+            break;
+        case ERROR_TYPE:
+            printf("Type : ERROR_TYPE\n");
+            break;
+    }
+}
+
+
+void dumpConstNode(AST_NODE *node) {
+    printf("Const Node\n");
+    CON_Type *con = node->semantic_value.const1;
+    switch(con->const_type) {
+        case INTEGERC:
+            printf("Type : INTEGERC\n");
+            printf("Value : %d\n", con->const_u.intval);
+            break;
+        case FLOATC:
+            printf("Type : FLOATC\n");
+            printf("Value : %lf\n", con->const_u.fval);
+            break;
+        case STRINGC:
+            printf("Type : STRINGC\n");
+            printf("Value : %s\n", con->const_u.sc);
+            break;
+        default:
+            break;
+    }
+}
+
+void dumpStmtNode(AST_NODE *node) {
+    printf("Stmt Node\n");
+    STMTSemanticValue stmt = node->semantic_value.stmtSemanticValue;
+    switch(stmt.kind) {
+        case ASSIGN_STMT:
+            printf("Kind : ASSIGN_STMT\n");
+        default: break;
+    }
 }

@@ -5,7 +5,6 @@
 // This file is for reference only, you are not required to follow the implementation. //
 
 #define ERROR(x) { fprintf(stderr, (x)); exit(-1);}
-#define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 int HASH(char * str) {
     int idx=0;
@@ -38,11 +37,11 @@ SymbolTableEntry* newSymbolTableEntry(int nestingLevel)
     symbolTableEntry->nestingLevel = nestingLevel;
     return symbolTableEntry;
 }
-
+/*
 void removeFromHashChain(int hashIndex, SymbolTableEntry* entry)
 {
 }
-
+*/
 void enterIntoHashChain(int hashIndex, SymbolTableEntry* entry)
 {
     SymbolTableEntry **head = &(currentScope()->hashTable[hashIndex]);
@@ -92,7 +91,6 @@ SymbolTableEntry* retrieveSymbol(char* symbolName)
             head = &((*head)->nextInHashChain);
         }
     }
-    /* TODO : Error message : undeclared symbol */
     return NULL;
 }
 
@@ -110,11 +108,12 @@ SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute)
 }
 
 //remove the symbol from the current scope
+/*
 void removeSymbol(char* symbolName)
 {
 
 }
-
+*/
 int declaredLocally(char* symbolName)
 {
     int hashIndex = HASH(symbolName);
