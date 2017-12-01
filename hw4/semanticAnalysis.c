@@ -138,13 +138,15 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
     case VOID_VARIABLE:
         printf("ID <%s> is of type void.\n", getIdByNode(node));
         break;
+    case NOT_ARRAY:
+        printf("ID <%s> is not an array.\n", getIdByNode(node));
+        break;
     case TRY_TO_INIT_ARRAY:
     case EXCESSIVE_ARRAY_DIM_DECLARATION:
     case RETURN_ARRAY:
     case TYPEDEF_VOID_ARRAY:
     case PARAMETER_TYPE_UNMATCH:
     case NOT_ASSIGNABLE:
-    case NOT_ARRAY:
     case IS_TYPE_NOT_VARIABLE:
     case IS_FUNCTION_NOT_VARIABLE:
     case STRING_OPERATION:
@@ -498,17 +500,18 @@ DATA_TYPE processExprRelatedNode(AST_NODE* exprRelatedNode)
         TypeDescriptor *desc = attr->attr.typeDescriptor;
         switch(desc->kind){
             case SCALAR_TYPE_DESCRIPTOR:
-                if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != NORMAL_ID) {
-                    // error: not scalar
+                if(exprRelatedNode->semantic_value.identifierSemanticValue.kind == ARRAY_ID) {
+                    printErrorMsg(exprRelatedNode, NOT_ARRAY);
                     return ERROR_TYPE;
                 }
                 return desc->properties.dataType;
             case ARRAY_TYPE_DESCRIPTOR:
                 if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != ARRAY_ID) {
                     // error: not array
+                    printErrorMsg(exprRelatedNode, INCOMPATIBLE_ARRAY_DIMENSION);
                     return ERROR_TYPE;
                 }
-                if(processDeclDimList(exprRelatedNode, NULL, 0) != desc->properties.arrayProperties.dimension) {
+                if(processDeclDimList(exprRelatedNode->child, NULL, 0) != desc->properties.arrayProperties.dimension) {
                     printErrorMsg(exprRelatedNode, INCOMPATIBLE_ARRAY_DIMENSION);
                     return ERROR_TYPE;
                 }
