@@ -8,13 +8,12 @@ int main() {
    a[2] = 3; /*error*/
    a = b[2]; /* error */
    c[3] = d; /* error */
-   c = 6; /* error */
    c = d[2]; /* error */
    c = d; /* error */
    c[3] = 5;
+   c[2] = d[1];
    e[2][1] = 1;
    e[1] = 1; /*error */
-   a = 5 + c; /* error */
    a = 5 + c; /* error */
    a = 5 + e[1]; /* error */
    a = 5 + e[1][1] + d[4];
