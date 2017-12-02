@@ -37,7 +37,6 @@ void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter
 void checkReturnStmt(AST_NODE* returnNode);
 DATA_TYPE processExprNode(AST_NODE* exprNode);
 DATA_TYPE processVariableLValue(AST_NODE* idNode);
-void processVariableRValue(AST_NODE* idNode);
 DATA_TYPE processConstValueNode(AST_NODE* constValueNode);
 DATA_TYPE getExprOrConstValue(AST_NODE* exprOrConstNode, int* iValue, float* fValue);
 void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype);
@@ -49,6 +48,11 @@ void dumpExprNode(AST_NODE *node);
 void dumpStmtNode(AST_NODE *node);
 void dumpConstNode(AST_NODE *node);
 void dumpIdNode(AST_NODE *node);
+
+
+extern SymbolAttribute readAttr;
+extern SymbolAttribute freadAttr;
+extern SymbolAttribute writeAttr;
 
 static __inline__ char* getIdByNode(AST_NODE *node) {
     return node->semantic_value.identifierSemanticValue.identifierName;
@@ -167,7 +171,7 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
             printf("Try to operate on a string.\n");
             break;
         case VOID_OPERATION:
-            printf("Try to operate on a function returns void.\n");
+            printf("Try to operate on a function without return value.\n");
             break;
         case PARAMETER_TYPE_UNMATCH:
             printf("Parameter type unmatch.\n");
@@ -214,6 +218,9 @@ void semanticAnalysis(AST_NODE *root)
     insertType(SYMBOL_TABLE_FLOAT_NAME, FLOAT_TYPE);
     insertType(SYMBOL_TABLE_VOID_NAME, VOID_TYPE);
     /* preinsert read, fread, write? */
+    enterSymbol(SYMBOL_TABLE_SYS_LIB_READ, &readAttr);
+    enterSymbol(SYMBOL_TABLE_SYS_LIB_FREAD, &freadAttr);
+    enterSymbol(SYMBOL_TABLE_SYS_LIB_WRITE, &writeAttr);
 
     processProgramNode(root);
 }
@@ -323,14 +330,22 @@ void declareIdList(AST_NODE* declarationNode, SymbolAttributeKind isVariableOrTy
                 case WITH_INIT_ID:
                     expr_node = id_list->child;
                     init_type = processExprRelatedNode(expr_node);
+                    if(init_type == CONST_STRING_TYPE) {
+                        printErrorMsg(expr_node, STRING_OPERATION);
+                        break;
+                    }
+                    if(init_type == VOID_TYPE) {
+                        printErrorMsg(expr_node, VOID_OPERATION);
+                        break;
+                    }
                     if(init_type == ERROR_TYPE){
-                        /* error: invalid init value */
                         break;
                     }
+                    /*
                     if(datatype == INT_TYPE && init_type == FLOAT_TYPE){
-                        /* error: can not assign float to int */
+                        // error: can not assign float to int ?
                         break;
-                    }
+                    }*/
                     typedesc = newTypeDesc(SCALAR_TYPE_DESCRIPTOR);
                     typedesc->properties.dataType = datatype;
                     symbolattr->attr.typeDescriptor = typedesc;
@@ -462,8 +477,21 @@ void checkIfStmt(AST_NODE* ifNode)
     }
 }
 
-void checkWriteFunction(AST_NODE* functionCallNode)
+void checkWriteFunction(AST_NODE* funcNameNode)
 {
+    if(funcNameNode->rightSibling->nodeType == NUL_NODE) {
+        printErrorMsg(funcNameNode, TOO_FEW_ARGUMENTS);
+        return;
+    }
+    AST_NODE* arg = funcNameNode->rightSibling->child;
+    if(arg->rightSibling != NULL) {
+        printErrorMsg(funcNameNode, TOO_MANY_ARGUMENTS);
+        return;
+    }
+    DATA_TYPE argType = processExprRelatedNode(arg);
+    if(argType == VOID_TYPE) {
+        printErrorMsg(funcNameNode, VOID_OPERATION);
+    }
 }
 
 DATA_TYPE checkFunctionCall(AST_NODE* functionCallNode)
@@ -482,16 +510,18 @@ DATA_TYPE checkFunctionCall(AST_NODE* functionCallNode)
     }
     /* check parameters */
     FunctionSignature *sign = entry->attribute->attr.functionSignature;
+    if(!strncmp(getIdByNode(funcNameNode), "write", 6)) {
+        checkWriteFunction(funcNameNode);
+        return VOID_TYPE;
+    }
     if(sign->parametersCount == 0) {
         if(funcNameNode->rightSibling->nodeType != NUL_NODE) {
             printErrorMsg(funcNameNode, TOO_MANY_ARGUMENTS);
             return ERROR_TYPE;
-        } else {
-            return VOID_TYPE;
         }
+    } else {
+        checkParameterPassing(sign->parameterList, funcNameNode);
     }
-
-    checkParameterPassing(sign->parameterList, funcNameNode);
     return sign->returnType;
 }
 
@@ -927,10 +957,7 @@ DATA_TYPE processVariableLValue(AST_NODE* idNode)
             }
             return desc->properties.arrayProperties.elementType;
     }
-}
-
-void processVariableRValue(AST_NODE* idNode)
-{
+    return ERROR_TYPE;
 }
 
 DATA_TYPE processConstValueNode(AST_NODE* constValueNode)
@@ -943,6 +970,7 @@ DATA_TYPE processConstValueNode(AST_NODE* constValueNode)
         case STRINGC:
             return CONST_STRING_TYPE;
     }
+    return ERROR_TYPE;
 }
 
 
@@ -1118,7 +1146,7 @@ void declareFunction(AST_NODE* declarationNode)
 {
     assert(declarationNode->nodeType == DECLARATION_NODE);
     assert(declarationNode->semantic_value.declSemanticValue.kind == FUNCTION_DECL);
-    
+
     AST_NODE *ret_node, *name_node, *param_node, *block_node;
     ret_node = declarationNode->child;
     name_node = ret_node->rightSibling;
@@ -1156,6 +1184,8 @@ void declareFunction(AST_NODE* declarationNode)
         if(param_type == ERROR_TYPE){
             printErrorMsg(param_type_node, SYMBOL_IS_NOT_TYPE);
             /* break? continue? */
+        } else if(param_type == VOID_TYPE) {
+            printErrorMsg(param_id_node, VOID_VARIABLE);
         }
         TypeDescriptor *desc;
         switch(param_id_node->semantic_value.identifierSemanticValue.kind){

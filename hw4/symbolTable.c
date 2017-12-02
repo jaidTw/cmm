@@ -6,6 +6,14 @@
 
 #define ERROR(x) { fprintf(stderr, (x)); exit(-1);}
 
+FunctionSignature readSign = { .parametersCount = 0, .parameterList = NULL, .returnType = INT_TYPE};
+FunctionSignature freadSign = { .parametersCount = 0, .parameterList = NULL, .returnType = FLOAT_TYPE};
+FunctionSignature writeSign = { .parametersCount = 1, .parameterList = NULL, .returnType = VOID_TYPE};
+SymbolAttribute readAttr = {FUNCTION_SIGNATURE, {.functionSignature = &readSign}};
+SymbolAttribute freadAttr = {FUNCTION_SIGNATURE, {.functionSignature = &freadSign}};
+SymbolAttribute writeAttr = {FUNCTION_SIGNATURE, {.functionSignature = &writeSign}};
+
+
 int HASH(char * str) {
     int idx=0;
     while (*str){
