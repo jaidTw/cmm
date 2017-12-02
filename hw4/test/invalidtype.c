@@ -12,6 +12,6 @@ int main() {
     VOID h[6];
     VOIDD i[3][2.3]; /* error : var of void array */
     b = f() + 3 + c;
-    b = ABC + 3;
+    b = VOID + 3;
     return 0;
 }
