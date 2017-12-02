@@ -1,5 +1,6 @@
 int main() {
-    int a = "test";
+    int a = "test"; /* error */
+    a = "test"; /* error */
     write("test");
-    write("test" + 3);
+    write("test" + 3); /* error */
 }

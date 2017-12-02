@@ -9,6 +9,7 @@ int main() {
     }
     for(;;)
     for(c=5;;); /* error */
+    for(a="test";;); /* error */
     for(;c < 10;); /* error */
     for(;c;); /* error */
     for(;;c = c + 1); /* error */

@@ -2,6 +2,8 @@ typedef int VOID;
 typedef float VOID;
 typedef void VOIDD;
 
+void f(VOIDD i) {} /* error */
+
 int main() {
     int b;
     float c;

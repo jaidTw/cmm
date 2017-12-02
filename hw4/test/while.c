@@ -4,4 +4,5 @@ int main(){
      while(i > 10) { i = i + 2; }
      while(i < 5 && a > 6);
      while(i < 5 || b < 3); /* undecl b */
+     while("test");
 }
