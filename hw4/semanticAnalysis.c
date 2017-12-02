@@ -13,6 +13,7 @@
 }
 
 int g_anyErrorOccur = 0;
+int g_suppressError = 0;
 AST_NODE *g_currentFunctionDecl = NULL;
 
 DATA_TYPE getBiggerType(DATA_TYPE dataType1, DATA_TYPE dataType2);
@@ -24,7 +25,6 @@ int processDeclDimList(AST_NODE* variableDeclDimList, TypeDescriptor* desc, int 
 DATA_TYPE processTypeNode(AST_NODE* typeNode);
 void processBlockNode(AST_NODE* blockNode);
 void processStmtNode(AST_NODE* stmtNode);
-void processGeneralNode(AST_NODE *node);
 void checkAssignOrExpr(AST_NODE* assignOrExprRelatedNode);
 void checkWhileStmt(AST_NODE* whileNode);
 void checkForStmt(AST_NODE* forNode);
@@ -36,9 +36,9 @@ DATA_TYPE processExprRelatedNode(AST_NODE* exprRelatedNode);
 void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter);
 void checkReturnStmt(AST_NODE* returnNode);
 DATA_TYPE processExprNode(AST_NODE* exprNode);
-void processVariableLValue(AST_NODE* idNode);
+DATA_TYPE processVariableLValue(AST_NODE* idNode);
 void processVariableRValue(AST_NODE* idNode);
-void processConstValueNode(AST_NODE* constValueNode);
+DATA_TYPE processConstValueNode(AST_NODE* constValueNode);
 DATA_TYPE getExprOrConstValue(AST_NODE* exprOrConstNode, int* iValue, float* fValue);
 void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype);
 
@@ -83,93 +83,103 @@ typedef enum ErrorMsgKind
     PASS_SCALAR_TO_ARRAY
 } ErrorMsgKind;
 
-/*
+
 void printErrorMsgSpecial(AST_NODE* node1, char* name2, ErrorMsgKind errorMsgKind)
 {
+    if(g_suppressError) return;
     g_anyErrorOccur = 1;
     printf("Error found in line %d\n", node1->linenumber);
-    
+
     switch(errorMsgKind)
     {
-        printf("Unhandled case in void printErrorMsg(AST_NODE* node, ERROR_MSG_KIND* errorMsgKind)\n");
-        break;
+        case PASS_ARRAY_TO_SCALAR:
+            printf("Array <%s> passed to scalar parameter <%s>.\n", getIdByNode(node1), name2);
+            break;
+        case PASS_SCALAR_TO_ARRAY:
+            if(node1->nodeType == IDENTIFIER_NODE)
+                printf("Scalar <%s> passed to array parameter <%s>.\n", getIdByNode(node1), name2);
+            else
+                printf("Scalar expression passed to array parameter <%s>.\n", name2);
+            break;
+        default:
+            FATAL("Unexcepted execution flow!");
+            break;
     }
 }
-*/
-
 
 void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
 {
+    if(g_suppressError) return;
     g_anyErrorOccur = 1;
     printf("Error found in line %d\n", node->linenumber);
     switch(errorMsgKind)
     {
-    case SYMBOL_IS_NOT_TYPE:
-        printf("<%s> doesn't named a type.\n", getIdByNode(node));
-        break;
-    case SYMBOL_REDECLARE:
-        printf("ID <%s> redeclared.\n", getIdByNode(node));
-        break;
-    case SYMBOL_UNDECLARED:
-        printf("ID <%s> undeclared.\n", getIdByNode(node));
-        break;
-    case NOT_FUNCTION_NAME:
-        printf("ID <%s> is not a function.\n", getIdByNode(node));
-        break;
-    case TOO_FEW_ARGUMENTS:
-        printf("too few arguments to function <%s>.\n", getIdByNode(node));
-        break;
-    case TOO_MANY_ARGUMENTS:
-        printf("too many arguments to function <%s>.\n", getIdByNode(node));
-        break;
-    case RETURN_TYPE_UNMATCH:
-        printf("Incompatible return type.\n");
-        break;
-    case INCOMPATIBLE_ARRAY_DIMENSION:
-        printf("Incompatible array dimensions.\n");
-        break;
-    case ARRAY_SIZE_NOT_INT:
-        printf("Array size is not an integer.\n");
-        break;
-    case ARRAY_SIZE_NEGATIVE:
-        printf("Array size is negative.\n");
-        break;
-    case ARRAY_SUBSCRIPT_NOT_INT:
-        printf("Array subscript is not an integer.\n");
-        break;
-    /* following errors are not specified in the spec */
-    case VOID_VARIABLE:
-        printf("ID <%s> is of type void.\n", getIdByNode(node));
-        break;
-    case NOT_ARRAY:
-        printf("ID <%s> is not an array.\n", getIdByNode(node));
-        break;
-    case IS_FUNCTION_NOT_VARIABLE:
-        printf("ID <%s> is a function, not variable.\n", getIdByNode(node));
-        break;
-    case IS_TYPE_NOT_VARIABLE:
-        printf("ID <%s> is a type, not variable.\n", getIdByNode(node));
-        break;
-    case EXCESSIVE_ARRAY_DIM_DECLARATION:
-        printf("ID <%s> exceeds maximum array dimension.\n", getIdByNode(node));
-        break;
-    case STRING_OPERATION:
-        printf("Try to operate on a string.\n");
-        break;
-    case VOID_OPERATION:
-        printf("Try to operate on a function returns void.\n");
-        break;
-    case NOT_ASSIGNABLE:
-    case RETURN_ARRAY:
-    case TYPEDEF_VOID_ARRAY:
-    case PARAMETER_TYPE_UNMATCH:
-    case PASS_ARRAY_TO_SCALAR:
-    case PASS_SCALAR_TO_ARRAY:
-    case TRY_TO_INIT_ARRAY:
-    default:
-        FATAL("Invalid ErrorMsgKind!");
-        break;
-    }
+        case SYMBOL_IS_NOT_TYPE:
+            printf("<%s> doesn't named a type.\n", getIdByNode(node));
+            break;
+        case SYMBOL_REDECLARE:
+            printf("ID <%s> redeclared.\n", getIdByNode(node));
+            break;
+        case SYMBOL_UNDECLARED:
+            printf("ID <%s> undeclared.\n", getIdByNode(node));
+            break;
+        case NOT_FUNCTION_NAME:
+            printf("ID <%s> is not a function.\n", getIdByNode(node));
+            break;
+        case TOO_FEW_ARGUMENTS:
+            printf("too few arguments to function <%s>.\n", getIdByNode(node));
+            break;
+        case TOO_MANY_ARGUMENTS:
+            printf("too many arguments to function <%s>.\n", getIdByNode(node));
+            break;
+        case RETURN_TYPE_UNMATCH:
+            printf("Incompatible return type.\n");
+            break;
+        case INCOMPATIBLE_ARRAY_DIMENSION:
+            printf("Incompatible array dimensions.\n");
+            break;
+        case ARRAY_SIZE_NOT_INT:
+            printf("Array size is not an integer.\n");
+            break;
+        case ARRAY_SIZE_NEGATIVE:
+            printf("Array size is negative.\n");
+            break;
+        case ARRAY_SUBSCRIPT_NOT_INT:
+            printf("Array subscript is not an integer.\n");
+            break;
+        /* following errors are not specified in the spec */
+        case VOID_VARIABLE:
+            printf("ID <%s> is of type void.\n", getIdByNode(node));
+            break;
+        case NOT_ARRAY:
+            printf("ID <%s> is not an array.\n", getIdByNode(node));
+            break;
+        case IS_FUNCTION_NOT_VARIABLE:
+            printf("ID <%s> is a function, not variable.\n", getIdByNode(node));
+            break;
+        case IS_TYPE_NOT_VARIABLE:
+            printf("ID <%s> is a type, not variable.\n", getIdByNode(node));
+            break;
+        case EXCESSIVE_ARRAY_DIM_DECLARATION:
+            printf("ID <%s> exceeds maximum array dimension.\n", getIdByNode(node));
+            break;
+        case STRING_OPERATION:
+            printf("Try to operate on a string.\n");
+            break;
+        case VOID_OPERATION:
+            printf("Try to operate on a function returns void.\n");
+            break;
+        case PARAMETER_TYPE_UNMATCH:
+            printf("Parameter type unmatch.\n");
+            break;
+        case NOT_ASSIGNABLE:
+        case RETURN_ARRAY:
+        case TYPEDEF_VOID_ARRAY:
+        case TRY_TO_INIT_ARRAY:
+        default:
+            FATAL("Invalid ErrorMsgKind!");
+            break;
+        }
 }
 
 
@@ -458,25 +468,108 @@ void checkWriteFunction(AST_NODE* functionCallNode)
 
 DATA_TYPE checkFunctionCall(AST_NODE* functionCallNode)
 {
-    AST_NODE* func = functionCallNode->child;
-    SymbolTableEntry *entry = retrieveSymbol(getIdByNode(func));
+    AST_NODE* funcNameNode = functionCallNode->child;
+    SymbolTableEntry *entry = retrieveSymbol(getIdByNode(funcNameNode));
     /* ID exist ? */
     if(entry == NULL) {
-        printErrorMsg(func, SYMBOL_UNDECLARED);
+        printErrorMsg(funcNameNode, SYMBOL_UNDECLARED);
         return ERROR_TYPE;
     }
     /* ID is of type function? */
     if(entry->attribute->attributeKind != FUNCTION_SIGNATURE) {
-        printErrorMsg(func, NOT_FUNCTION_NAME);
+        printErrorMsg(funcNameNode, NOT_FUNCTION_NAME);
         return ERROR_TYPE;
     }
     /* check parameters */
     FunctionSignature *sign = entry->attribute->attr.functionSignature;
+    if(sign->parametersCount == 0) {
+        if(funcNameNode->rightSibling->nodeType != NUL_NODE) {
+            printErrorMsg(funcNameNode, TOO_MANY_ARGUMENTS);
+            return ERROR_TYPE;
+        } else {
+            return VOID_TYPE;
+        }
+    }
+
+    checkParameterPassing(sign->parameterList, funcNameNode);
     return sign->returnType;
 }
 
-void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter)
+void checkParameterPassing(Parameter* param, AST_NODE* funcNameNode)
 {
+    AST_NODE *arg = funcNameNode->rightSibling->child;
+    while(param) {
+        if(!arg) {
+            printErrorMsg(funcNameNode, TOO_FEW_ARGUMENTS);
+            break;
+        }
+        switch(arg->nodeType) {
+            case CONST_VALUE_NODE:
+            case IDENTIFIER_NODE:
+            case EXPR_NODE:
+            case STMT_NODE:
+                if(param->type->kind == SCALAR_TYPE_DESCRIPTOR) {
+                    /* check if arg is scalar */
+                    if(arg->nodeType == IDENTIFIER_NODE) {
+                        SymbolTableEntry *entry = retrieveSymbol(getIdByNode(arg));
+                        if(entry->attribute->attributeKind == VARIABLE_ATTRIBUTE) {
+                            if(entry->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR) {
+                                int argDim = entry->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
+                                int refDim = 0;
+                                if(arg->child != NULL)
+                                    refDim = processDeclDimList(arg->child, NULL, 0);
+                                if(argDim > refDim) {
+                                    printErrorMsgSpecial(arg, param->parameterName, PASS_ARRAY_TO_SCALAR);
+                                    g_suppressError = 1;
+                                }
+                                else if(argDim < refDim) {
+                                    printErrorMsg(arg, INCOMPATIBLE_ARRAY_DIMENSION);
+                                    g_suppressError = 1;
+                                }
+                            }
+                        }
+                    }
+                    DATA_TYPE argType = processExprRelatedNode(arg);
+                    if(argType == VOID_TYPE)
+                        printErrorMsg(arg, VOID_OPERATION);
+                    else if(argType == CONST_STRING_TYPE)
+                        printErrorMsg(arg, PARAMETER_TYPE_UNMATCH);
+                } else if(param->type->kind == ARRAY_TYPE_DESCRIPTOR) {
+                    /* check if arg is ptr */
+                    if(arg->nodeType == IDENTIFIER_NODE) {
+                        SymbolTableEntry *entry = retrieveSymbol(getIdByNode(arg));
+                        if(entry->attribute->attributeKind == VARIABLE_ATTRIBUTE) {
+                            if(entry->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR) {
+                                int argDim = entry->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
+                                int paramDim = param->type->properties.arrayProperties.dimension;
+                                int refDim = 0;
+                                if(arg->child != NULL)
+                                    refDim = processDeclDimList(arg->child, NULL, 0);
+                                if(refDim == argDim)
+                                    printErrorMsgSpecial(arg, param->parameterName, PASS_SCALAR_TO_ARRAY);
+                                else if(refDim > argDim || argDim - refDim != paramDim)
+                                    printErrorMsg(arg, INCOMPATIBLE_ARRAY_DIMENSION);
+                                g_suppressError = 1;
+                            }
+                        }
+                    }
+                    DATA_TYPE argType = processExprRelatedNode(arg);
+                    if(argType == VOID_TYPE)
+                        printErrorMsg(arg, VOID_OPERATION);
+                    else if(argType == CONST_STRING_TYPE)
+                        printErrorMsg(arg, PARAMETER_TYPE_UNMATCH);
+                    else if(argType != ERROR_TYPE)
+                        printErrorMsgSpecial(arg, param->parameterName, PASS_SCALAR_TO_ARRAY);
+                }
+                arg = arg->rightSibling;
+                break;
+            default: FATAL("Broken AST");
+        }
+        g_suppressError = 0;
+        param = param->next;
+    }
+    if(arg)
+        printErrorMsg(funcNameNode, TOO_MANY_ARGUMENTS);
 }
 
 DATA_TYPE processExprRelatedNode(AST_NODE* exprRelatedNode)
@@ -487,75 +580,42 @@ DATA_TYPE processExprRelatedNode(AST_NODE* exprRelatedNode)
         return processExprNode(exprRelatedNode);
     }
     else if(exprRelatedNode->nodeType == CONST_VALUE_NODE){
-        CON_Type *const1 = exprRelatedNode->semantic_value.const1;
-        switch(const1->const_type){
-            case INTEGERC:
-                return INT_TYPE;
-            case FLOATC:
-                return FLOAT_TYPE;
-            case STRINGC:
-                return CONST_STRING_TYPE;
-        }
+        return processConstValueNode(exprRelatedNode);
     }
     else if(exprRelatedNode->nodeType == STMT_NODE){
         AST_NODE *lvalue_node;
         switch(exprRelatedNode->semantic_value.stmtSemanticValue.kind){
             case FUNCTION_CALL_STMT:
                 return checkFunctionCall(exprRelatedNode);
-            case ASSIGN_STMT:
+            case ASSIGN_STMT: {
                 lvalue_node = exprRelatedNode->child;
                 DATA_TYPE ldatatype = processExprRelatedNode(lvalue_node);
+                if(ldatatype == ERROR_TYPE || ldatatype == VOID_TYPE)
+                    return ERROR_TYPE;
                 DATA_TYPE rdatatype = processExprRelatedNode(lvalue_node->rightSibling);
                 if(rdatatype != ldatatype) { 
-                    if(rdatatype == CONST_STRING_TYPE)
+                    if(rdatatype == CONST_STRING_TYPE) {
                         printErrorMsg(exprRelatedNode, STRING_OPERATION);
-                    else if(rdatatype == VOID_TYPE)
+                        return ERROR_TYPE;
+                    }
+                    else if(rdatatype == VOID_TYPE) {
                         printErrorMsg(exprRelatedNode, VOID_OPERATION);
+                        return ERROR_TYPE;
+                    }
+                    else if(rdatatype == ERROR_TYPE) {
+                        return ERROR_TYPE;
+                    }
                 }
                 /* what if rdatatype == ERROR_TYPE? */
                 /* any error message? */
                 return ldatatype;
+            }
             default:
-                /* TODO */
-                return INT_TYPE;
+                FATAL("Broken AST");
         }
     }
     else if(exprRelatedNode->nodeType == IDENTIFIER_NODE){
-        SymbolTableEntry *id_entry = retrieveSymbol(getIdByNode(exprRelatedNode));
-        if(id_entry == NULL){
-            printErrorMsg(exprRelatedNode, SYMBOL_UNDECLARED);
-            return ERROR_TYPE;
-        }
-
-        SymbolAttribute *attr = id_entry->attribute;
-        if(attr->attributeKind != VARIABLE_ATTRIBUTE){
-            /* error: symbol is not variable */
-            if(attr->attributeKind == FUNCTION_SIGNATURE)
-                printErrorMsg(exprRelatedNode, IS_FUNCTION_NOT_VARIABLE);
-            else if(attr->attributeKind == TYPE_ATTRIBUTE)
-                printErrorMsg(exprRelatedNode, IS_TYPE_NOT_VARIABLE);
-            return ERROR_TYPE;
-        }
-
-        TypeDescriptor *desc = attr->attr.typeDescriptor;
-        switch(desc->kind){
-            case SCALAR_TYPE_DESCRIPTOR:
-                if(exprRelatedNode->semantic_value.identifierSemanticValue.kind == ARRAY_ID) {
-                    printErrorMsg(exprRelatedNode, NOT_ARRAY);
-                    return ERROR_TYPE;
-                }
-                return desc->properties.dataType;
-            case ARRAY_TYPE_DESCRIPTOR:
-                if(exprRelatedNode->semantic_value.identifierSemanticValue.kind != ARRAY_ID) {
-                    printErrorMsg(exprRelatedNode, INCOMPATIBLE_ARRAY_DIMENSION);
-                    return ERROR_TYPE;
-                }
-                if(processDeclDimList(exprRelatedNode->child, NULL, 0) != desc->properties.arrayProperties.dimension) {
-                    printErrorMsg(exprRelatedNode, INCOMPATIBLE_ARRAY_DIMENSION);
-                    return ERROR_TYPE;
-                }
-                return desc->properties.arrayProperties.elementType;
-        }
+        return processVariableLValue(exprRelatedNode);
     }
     else if(exprRelatedNode->nodeType == NUL_NODE){
         /* Maybe we don't need this? */
@@ -740,7 +800,7 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
             if(l_datatype == INT_TYPE){
                 l_float = (float)l_int;
             }
-            float val;
+            float val = .0;
             switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
                 case UNARY_OP_POSITIVE:
                     val = l_float;
@@ -751,6 +811,7 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
                 case UNARY_OP_LOGICAL_NEGATION:
                     /* Error: bit complement on float,
                      * Maybe we need to exit immediately? */
+                    *(int *)&val = ~(*(int *)&l_float);
                     break;
             }
             exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
@@ -758,7 +819,6 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
         }
     }
 }
-
 
 DATA_TYPE processExprNode(AST_NODE* exprNode)
 {
@@ -775,6 +835,9 @@ DATA_TYPE processExprNode(AST_NODE* exprNode)
             if(ldatatype == CONST_STRING_TYPE || rdatatype == CONST_STRING_TYPE){
                 /* error: type error */
                 printErrorMsg(exprNode, STRING_OPERATION);
+                return ERROR_TYPE;
+            }
+            if(ldatatype == ERROR_TYPE || rdatatype == ERROR_TYPE) {
                 return ERROR_TYPE;
             }
 
@@ -823,12 +886,46 @@ DATA_TYPE processExprNode(AST_NODE* exprNode)
     return datatype;
 }
 
-
-void processVariableLValue(AST_NODE* idNode)
+DATA_TYPE processVariableLValue(AST_NODE* idNode)
 {
-    SymbolTableEntry *entry = retrieveSymbol(getIdByNode(idNode));
-    if(entry == NULL) {
+    SymbolTableEntry *id_entry = retrieveSymbol(getIdByNode(idNode));
+    if(id_entry == NULL){
         printErrorMsg(idNode, SYMBOL_UNDECLARED);
+        return ERROR_TYPE;
+    }
+
+    SymbolAttribute *attr = id_entry->attribute;
+    if(attr->attributeKind != VARIABLE_ATTRIBUTE){
+        /* error: symbol is not variable */
+        if(attr->attributeKind == FUNCTION_SIGNATURE)
+            printErrorMsg(idNode, IS_FUNCTION_NOT_VARIABLE);
+        else if(attr->attributeKind == TYPE_ATTRIBUTE)
+            printErrorMsg(idNode, IS_TYPE_NOT_VARIABLE);
+        return ERROR_TYPE;
+    }
+
+    TypeDescriptor *desc = attr->attr.typeDescriptor;
+    switch(desc->kind){
+        case SCALAR_TYPE_DESCRIPTOR:
+            if(idNode->semantic_value.identifierSemanticValue.kind == ARRAY_ID) {
+                printErrorMsg(idNode, NOT_ARRAY);
+                return ERROR_TYPE;
+            }
+            return desc->properties.dataType;
+        case ARRAY_TYPE_DESCRIPTOR:
+            if(idNode->semantic_value.identifierSemanticValue.kind != ARRAY_ID) {
+                printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
+                return ERROR_TYPE;
+            }
+            if(processDeclDimList(idNode->child, NULL, 0) > desc->properties.arrayProperties.dimension) {
+                printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
+                return ERROR_TYPE;
+            } else if(processDeclDimList(idNode->child, NULL, 0) < desc->properties.arrayProperties.dimension) {
+                printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
+                return ERROR_TYPE;
+
+            }
+            return desc->properties.arrayProperties.elementType;
     }
 }
 
@@ -836,9 +933,16 @@ void processVariableRValue(AST_NODE* idNode)
 {
 }
 
-
-void processConstValueNode(AST_NODE* constValueNode)
+DATA_TYPE processConstValueNode(AST_NODE* constValueNode)
 {
+    switch(constValueNode->semantic_value.const1->const_type){
+        case INTEGERC:
+            return INT_TYPE;
+        case FLOATC:
+            return FLOAT_TYPE;
+        case STRINGC:
+            return CONST_STRING_TYPE;
+    }
 }
 
 
@@ -864,7 +968,6 @@ void checkReturnStmt(AST_NODE* returnNode)
     }
 }
 
-
 void processBlockNode(AST_NODE* blockNode)
 {
     assert(blockNode->nodeType == BLOCK_NODE);
@@ -889,7 +992,6 @@ void processBlockNode(AST_NODE* blockNode)
         block = block->rightSibling;
     }
 }
-
 
 void processStmtNode(AST_NODE* stmtNode)
 {
@@ -930,14 +1032,10 @@ void processStmtNode(AST_NODE* stmtNode)
     }
 }
 
-
-void processGeneralNode(AST_NODE *node)
-{
-}
-
 int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDimSize)
 {
     int dim = 0;
+    AST_NODE* nameNode = idNode->parent;
     while(idNode){
         if(idNode->nodeType == NUL_NODE){
             if(ignoreFirstDimSize){
@@ -953,7 +1051,7 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
             int size;
             if(idNode->nodeType == CONST_VALUE_NODE){
                 if(idNode->semantic_value.const1->const_type != INTEGERC){
-                    printErrorMsg(idNode, ARRAY_SIZE_NOT_INT);
+                    printErrorMsg(nameNode, ARRAY_SIZE_NOT_INT);
                     size = -2;
                 }
                 else{
@@ -962,7 +1060,7 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
             }
             else if(idNode->nodeType == EXPR_NODE){
                 if(processExprRelatedNode(idNode) != INT_TYPE){
-                    printErrorMsg(idNode, ARRAY_SIZE_NOT_INT);
+                    printErrorMsg(nameNode, ARRAY_SIZE_NOT_INT);
                     size = -2;
                 }
                 else{
@@ -973,26 +1071,26 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
             else if(idNode->nodeType == STMT_NODE){
                 SymbolTableEntry *entry = retrieveSymbol(getIdByNode(idNode->child));
                 if(entry->attribute->attr.functionSignature->returnType != INT_TYPE)
-                    printErrorMsg(idNode, ARRAY_SUBSCRIPT_NOT_INT);
+                    printErrorMsg(nameNode, ARRAY_SUBSCRIPT_NOT_INT);
             }
             else if(idNode->nodeType == IDENTIFIER_NODE) {
                 SymbolTableEntry *entry = retrieveSymbol(getIdByNode(idNode));
                 if(entry->attribute->attributeKind == TYPE_ATTRIBUTE)
-                    printErrorMsg(idNode, IS_TYPE_NOT_VARIABLE);
+                    printErrorMsg(nameNode, IS_TYPE_NOT_VARIABLE);
                 else if(entry->attribute->attributeKind == FUNCTION_SIGNATURE)
-                    printErrorMsg(idNode, IS_FUNCTION_NOT_VARIABLE);
+                    printErrorMsg(nameNode, IS_FUNCTION_NOT_VARIABLE);
                 else {
                     TypeDescriptor *desc = entry->attribute->attr.typeDescriptor;
                     switch(desc->kind) {
                         case SCALAR_TYPE_DESCRIPTOR:
                             if(desc->properties.dataType != INT_TYPE)
-                                printErrorMsg(idNode, ARRAY_SUBSCRIPT_NOT_INT);
+                                printErrorMsg(nameNode, ARRAY_SUBSCRIPT_NOT_INT);
                             break;
                         case ARRAY_TYPE_DESCRIPTOR:
                             if(desc->properties.arrayProperties.elementType != INT_TYPE)
-                                printErrorMsg(idNode, ARRAY_SUBSCRIPT_NOT_INT);
+                                printErrorMsg(nameNode, ARRAY_SUBSCRIPT_NOT_INT);
                             else if(processDeclDimList(idNode->child, NULL, 0) != desc->properties.arrayProperties.dimension)
-                                printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
+                                printErrorMsg(nameNode, INCOMPATIBLE_ARRAY_DIMENSION);
                             break;
                     }
                 }
@@ -1004,8 +1102,8 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
         dim += 1;
         ignoreFirstDimSize = 0;
         idNode = idNode->rightSibling;
-        if(dim > MAX_ARRAY_DIMENSION) {
-            printErrorMsg(idNode, EXCESSIVE_ARRAY_DIM_DECLARATION);
+        if(dim >= MAX_ARRAY_DIMENSION) {
+            printErrorMsg(nameNode, EXCESSIVE_ARRAY_DIM_DECLARATION);
             break;
         }
     }
@@ -1249,7 +1347,7 @@ void dumpIdNode(AST_NODE *node) {
             printf("Kind : ARRAY_ID\n");
             break;
         case WITH_INIT_ID:
-            printf("Kind : ARRAY_ID\n");
+            printf("Kind : WITH_INIT_ID\n");
             break;
     }
 }
