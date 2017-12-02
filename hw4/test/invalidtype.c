@@ -11,7 +11,7 @@ int main() {
     VOIDD g; /* error : var of type void*/
     VOID h[6];
     VOIDD i[3][2.3]; /* error : var of void array */
-    b = f() + 3 + c;
-    b = VOID + 3;
+    b = f() + 3 + c; /* error */
+    b = VOID + 3; /*error */
     return 0;
 }

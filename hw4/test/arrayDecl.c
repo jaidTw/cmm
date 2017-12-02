@@ -1,5 +1,6 @@
 int main() {
   int a[1];
+  int aa[0][0][0][0][0][0][0][0][0][0][0];
   int b[2.5]; /* error */
   int c[8.6/2]; /* error */
   float d[2/0.2]; /* error */
