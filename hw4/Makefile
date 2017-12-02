@@ -1,7 +1,7 @@
 TARGET = parser
 OBJECT = parser.tab.c parser.tab.o lex.yy.c alloc.o functions.o semanticAnalysis.o symbolTable.o
 OUTPUT = parser.output parser.tab.h
-CC = gcc -g -Wall -Wextra
+CC = gcc -g -Wall -Wno-unused-function
 LEX = flex
 YACC = bison -v
 YACCFLAG = -d
