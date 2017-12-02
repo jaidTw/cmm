@@ -1,3 +1,4 @@
+void f(int a[][][3]) {}
 int main(void) {
     void a; /* void as type */
     int b[2] = 5; /* array init*/

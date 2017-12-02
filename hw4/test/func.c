@@ -1,34 +1,36 @@
-int f1(int a){
-	return a;
-}
-void f2(int a){
-  return a;
-}
-int f3(int a){
-  return;
-}
-void f4(){
-  return;
-}
-int f5(float a){
-  return a;
-}
-int f6(int a[3]){
-  return a;
-}
-int f7(int b[][5]){
-  return b;
-}
+int f0(int a){ return a; }
+int f1(int a){ return a; }
+void f1(int a){} /* error */
+void f2(int a){ return a; } /* error */
+int f3(int a){ return; } /* error */
+void f4(){ return; }
+int f5(float a, int a){ return a; } /* error */
+int f6(int a[3]){ return a; } /* error */
+int f7(int b[][5]){ return b[0][0]; }
+void f8(int b[2.6]) {} /* error */
+void f9(int b[]) {}
+void f10(int b[5]) {}
 int main(){
-	float f1;
+	float f0;
 	int i;
-  i(2);
+  int ii[10];
+  i(2); /* error */
+  f0(2); /* error */
+  f100(); /* error */
+  f1(); /* error */
   f1(2);
-  f2(3);
-  f3(3, 5);
-  f4(2, 6);
-  f2();
-  f6();
-  f6(i);
+  f1(2 + 5);
+  f1(2 + f1(3));
+  f1(f1(2) + 3, f(2) + f(5)); /*error */
+  f1(2, 3); /* error */
+  f4();
+  f4 = 3; /* error */
+  i = f1 - 3; /* error */
+  i = ii[f1] - 3; /* error */
+  i = ii[f1(3)] - 3;
+  f4(2); /* error */
+  f2(); /* error */
+  f9(i);
+  f9(ii);
 	return 0;
 }
