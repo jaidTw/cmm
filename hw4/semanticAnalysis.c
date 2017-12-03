@@ -97,13 +97,13 @@ void printErrorMsgSpecial(AST_NODE* node1, char* name2, ErrorMsgKind errorMsgKin
     switch(errorMsgKind)
     {
         case PASS_ARRAY_TO_SCALAR:
-            printf("Array <%s> passed to scalar parameter <%s>.\n", getIdByNode(node1), name2);
+            printf("Array %s passed to scalar parameter %s.\n", getIdByNode(node1), name2);
             break;
         case PASS_SCALAR_TO_ARRAY:
             if(node1->nodeType == IDENTIFIER_NODE)
-                printf("Scalar <%s> passed to array parameter <%s>.\n", getIdByNode(node1), name2);
+                printf("Scalar %s passed to array parameter %s.\n", getIdByNode(node1), name2);
             else
-                printf("Scalar expression passed to array parameter <%s>.\n", name2);
+                printf("Scalar expression passed to array parameter %s.\n", name2);
             break;
         default:
             FATAL("Unexcepted execution flow!");
@@ -118,23 +118,20 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
     printf("Error found in line %d\n", node->linenumber);
     switch(errorMsgKind)
     {
-        case SYMBOL_IS_NOT_TYPE:
-            printf("<%s> doesn't named a type.\n", getIdByNode(node));
-            break;
         case SYMBOL_REDECLARE:
-            printf("ID <%s> redeclared.\n", getIdByNode(node));
+            printf("ID %s redeclared.\n", getIdByNode(node));
             break;
         case SYMBOL_UNDECLARED:
-            printf("ID <%s> undeclared.\n", getIdByNode(node));
+            printf("ID %s undeclared.\n", getIdByNode(node));
             break;
         case NOT_FUNCTION_NAME:
-            printf("ID <%s> is not a function.\n", getIdByNode(node));
+            printf("ID %s is not a function.\n", getIdByNode(node));
             break;
         case TOO_FEW_ARGUMENTS:
-            printf("too few arguments to function <%s>.\n", getIdByNode(node));
+            printf("too few arguments to function %s.\n", getIdByNode(node));
             break;
         case TOO_MANY_ARGUMENTS:
-            printf("too many arguments to function <%s>.\n", getIdByNode(node));
+            printf("too many arguments to function %s.\n", getIdByNode(node));
             break;
         case RETURN_TYPE_UNMATCH:
             printf("Incompatible return type.\n");
@@ -152,20 +149,23 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
             printf("Array subscript is not an integer.\n");
             break;
         /* following errors are not specified in the spec */
+        case SYMBOL_IS_NOT_TYPE:
+            printf("%s doesn't named a type.\n", getIdByNode(node));
+            break;
         case VOID_VARIABLE:
-            printf("ID <%s> is of type void.\n", getIdByNode(node));
+            printf("ID %s is of type void.\n", getIdByNode(node));
             break;
         case NOT_ARRAY:
-            printf("ID <%s> is not an array.\n", getIdByNode(node));
+            printf("ID %s is not an array.\n", getIdByNode(node));
             break;
         case IS_FUNCTION_NOT_VARIABLE:
-            printf("ID <%s> is a function, not variable.\n", getIdByNode(node));
+            printf("ID %s is a function, not variable.\n", getIdByNode(node));
             break;
         case IS_TYPE_NOT_VARIABLE:
-            printf("ID <%s> is a type, not variable.\n", getIdByNode(node));
+            printf("ID %s is a type, not variable.\n", getIdByNode(node));
             break;
         case EXCESSIVE_ARRAY_DIM_DECLARATION:
-            printf("ID <%s> exceeds maximum array dimension.\n", getIdByNode(node));
+            printf("ID %s exceeds maximum array dimension.\n", getIdByNode(node));
             break;
         case STRING_OPERATION:
             printf("Try to operate on a string.\n");
