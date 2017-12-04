@@ -124,9 +124,6 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
         case SYMBOL_UNDECLARED:
             printf("ID %s undeclared.\n", getIdByNode(node));
             break;
-        case NOT_FUNCTION_NAME:
-            printf("ID %s is not a function.\n", getIdByNode(node));
-            break;
         case TOO_FEW_ARGUMENTS:
             printf("too few arguments to function %s.\n", getIdByNode(node));
             break;
@@ -149,6 +146,9 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
             printf("Array subscript is not an integer.\n");
             break;
         /* following errors are not specified in the spec */
+        case NOT_FUNCTION_NAME:
+            printf("ID %s is not a function.\n", getIdByNode(node));
+            break;
         case SYMBOL_IS_NOT_TYPE:
             printf("%s doesn't named a type.\n", getIdByNode(node));
             break;
@@ -707,6 +707,9 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
 
         DATA_TYPE l_datatype = getExprOrConstValue(lexpr, &l_int, &l_float);
         DATA_TYPE r_datatype = getExprOrConstValue(rexpr, &r_int, &r_float);
+        if(datatype != INT_TYPE && datatype != FLOAT_TYPE) {
+            return;
+        }
         if(l_datatype == ERROR_TYPE || r_datatype == ERROR_TYPE
             || l_datatype == VOID_TYPE || r_datatype == VOID_TYPE){
             /* error message? */
@@ -989,10 +992,11 @@ DATA_TYPE processVariableLValue(AST_NODE* idNode)
                 printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
                 return ERROR_TYPE;
             }
-            if(processDeclDimList(idNode->child, NULL, 0) > desc->properties.arrayProperties.dimension) {
+            int refDim = processDeclDimList(idNode->child, NULL, 0);
+            if(refDim > desc->properties.arrayProperties.dimension) {
                 printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
                 return ERROR_TYPE;
-            } else if(processDeclDimList(idNode->child, NULL, 0) < desc->properties.arrayProperties.dimension) {
+            } else if(refDim < desc->properties.arrayProperties.dimension) {
                 printErrorMsg(idNode, INCOMPATIBLE_ARRAY_DIMENSION);
                 return ERROR_TYPE;
 
@@ -1152,9 +1156,9 @@ int processDeclDimList(AST_NODE* idNode, TypeDescriptor* desc, int ignoreFirstDi
             else if(idNode->nodeType == IDENTIFIER_NODE) {
                 SymbolTableEntry *entry = retrieveSymbol(getIdByNode(idNode));
                 if(entry->attribute->attributeKind == TYPE_ATTRIBUTE)
-                    printErrorMsg(nameNode, IS_TYPE_NOT_VARIABLE);
+                    printErrorMsg(idNode, IS_TYPE_NOT_VARIABLE);
                 else if(entry->attribute->attributeKind == FUNCTION_SIGNATURE)
-                    printErrorMsg(nameNode, IS_FUNCTION_NOT_VARIABLE);
+                    printErrorMsg(idNode, IS_FUNCTION_NOT_VARIABLE);
                 else {
                     TypeDescriptor *desc = entry->attribute->attr.typeDescriptor;
                     switch(desc->kind) {
