@@ -707,13 +707,12 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
 
         DATA_TYPE l_datatype = getExprOrConstValue(lexpr, &l_int, &l_float);
         DATA_TYPE r_datatype = getExprOrConstValue(rexpr, &r_int, &r_float);
-        if(l_datatype == ERROR_TYPE || r_datatype == ERROR_TYPE){
+        if(l_datatype == ERROR_TYPE || r_datatype == ERROR_TYPE
+            || l_datatype == VOID_TYPE || r_datatype == VOID_TYPE){
             /* error message? */
             return;
         }
-        if(datatype == INT_TYPE){
-            assert(l_datatype == INT_TYPE);
-            assert(r_datatype == INT_TYPE);
+        if(l_datatype == INT_TYPE && r_datatype == INT_TYPE){
             int val;
             switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp){
                 case BINARY_OP_ADD:
@@ -754,16 +753,18 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
                     break;
             }
             exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-            exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+            if(datatype == INT_TYPE)
+                exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+            else if(datatype == FLOAT_TYPE)
+                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = (float)val;
         }
-        else if(datatype == FLOAT_TYPE){
-            if(l_datatype == INT_TYPE){
+        else if(datatype == FLOAT_TYPE || r_datatype == FLOAT_TYPE){
+            if(l_datatype == INT_TYPE)
                 l_float = (float)l_int;
-            }
-            if(r_datatype == INT_TYPE){
+            if(r_datatype == INT_TYPE)
                 r_float = (float)r_int;
-            }
-            float val;
+            float val = .0;
+            int ival = 0;
             switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp) {
                 case BINARY_OP_ADD:
                     val = l_float + r_float;
@@ -778,32 +779,55 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
                     val = l_float / r_float;
                     break;
                 case BINARY_OP_EQ:
-                    val = (l_float == r_float);
+                    ival = (l_float == r_float);
                     break;
                 case BINARY_OP_GE:
-                    val = (l_float >= r_float);
+                    ival = (l_float >= r_float);
                     break;
                 case BINARY_OP_LE:
-                    val = (l_float <= r_float);
+                    ival = (l_float <= r_float);
                     break;
                 case BINARY_OP_NE:
-                    val = (l_float != r_float);
+                    ival = (l_float != r_float);
                     break;
                 case BINARY_OP_GT:
-                    val = (l_float > r_float);
+                    ival = (l_float > r_float);
                     break;
                 case BINARY_OP_LT:
-                    val = (l_float < r_float);
+                    ival = (l_float < r_float);
                     break;
                 case BINARY_OP_AND:
-                    val = (l_float && r_float);
+                    ival = (l_float && r_float);
                     break;
                 case BINARY_OP_OR:
-                    val = (l_float || r_float);
+                    ival = (l_float || r_float);
                     break;
             }
             exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-            exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
+            switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp) {
+                case BINARY_OP_ADD:
+                case BINARY_OP_SUB:
+                case BINARY_OP_MUL:
+                case BINARY_OP_DIV:
+                    if(datatype == INT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = (int)val;
+                    else if(datatype == FLOAT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
+                    break;
+                case BINARY_OP_EQ:
+                case BINARY_OP_GE:
+                case BINARY_OP_LE:
+                case BINARY_OP_NE:
+                case BINARY_OP_GT:
+                case BINARY_OP_LT:
+                case BINARY_OP_AND:
+                case BINARY_OP_OR:
+                    if(datatype == INT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = ival;
+                    else if(datatype == FLOAT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = (float)ival;
+                    break;
+            }
         }
     }
     else if(exprNode->semantic_value.exprSemanticValue.kind == UNARY_OPERATION){
@@ -815,8 +839,7 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
             /* error message? */
             return;
         }
-        if(datatype == INT_TYPE){
-            assert(l_datatype == INT_TYPE);
+        if(l_datatype == INT_TYPE){
             int val;
             switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
                 case UNARY_OP_POSITIVE:
@@ -826,17 +849,18 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
                     val = -l_int;
                     break;
                 case UNARY_OP_LOGICAL_NEGATION:
-                    val = (~l_int);
+                    val = !(l_int);
                     break;
             }
             exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-            exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+            if(datatype == INT_TYPE)
+                exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = val;
+            else
+                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = (float)val;
         }
-        else if(datatype == FLOAT_TYPE){
-            if(l_datatype == INT_TYPE){
-                l_float = (float)l_int;
-            }
+        else if(l_datatype == FLOAT_TYPE){
             float val = .0;
+            int ival = 0;
             switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
                 case UNARY_OP_POSITIVE:
                     val = l_float;
@@ -845,13 +869,25 @@ void evaluateExprValue(AST_NODE* exprNode, DATA_TYPE datatype)
                     val = -l_float;
                     break;
                 case UNARY_OP_LOGICAL_NEGATION:
-                    /* Error: bit complement on float,
-                     * Maybe we need to exit immediately? */
-                    *(int *)&val = ~(*(int *)&l_float);
+                    ival = !(l_float);
+                    break;
+            }
+            switch(exprNode->semantic_value.exprSemanticValue.op.unaryOp){
+                case UNARY_OP_POSITIVE:
+                case UNARY_OP_NEGATIVE:
+                    if(datatype == INT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = (int)val;
+                    else if(datatype == FLOAT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
+                    break;
+                case UNARY_OP_LOGICAL_NEGATION:
+                    if(datatype == INT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = ival;
+                    else if(datatype == FLOAT_TYPE)
+                        exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = (float)ival;
                     break;
             }
             exprNode->semantic_value.exprSemanticValue.isConstEval = 1;
-            exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = val;
         }
     }
 }
