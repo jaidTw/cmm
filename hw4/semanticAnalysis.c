@@ -28,7 +28,6 @@ void processStmtNode(AST_NODE* stmtNode);
 void checkAssignOrExpr(AST_NODE* assignOrExprRelatedNode);
 void checkWhileStmt(AST_NODE* whileNode);
 void checkForStmt(AST_NODE* forNode);
-void checkAssignmentStmt(AST_NODE* assignmentNode);
 void checkIfStmt(AST_NODE* ifNode);
 void checkWriteFunction(AST_NODE* functionCallNode);
 DATA_TYPE checkFunctionCall(AST_NODE* functionCallNode);
@@ -84,7 +83,8 @@ typedef enum ErrorMsgKind
     ARRAY_SIZE_NEGATIVE,
     ARRAY_SUBSCRIPT_NOT_INT,
     PASS_ARRAY_TO_SCALAR,
-    PASS_SCALAR_TO_ARRAY
+    PASS_SCALAR_TO_ARRAY,
+    IMPLICIT_CONVERSION
 } ErrorMsgKind;
 
 
@@ -186,6 +186,18 @@ void printErrorMsg(AST_NODE* node, ErrorMsgKind errorMsgKind)
         }
 }
 
+void printWarnMsg(AST_NODE* node, ErrorMsgKind errorMsgKind) {
+    printf("Warning in line %d\n", node->linenumber);
+    switch(errorMsgKind)
+    {
+        case IMPLICIT_CONVERSION:
+            printf("Implicit return type conversion.\n");
+            break;
+        default:
+            FATAL("Unexcepted execution flow!");
+            break;
+    }
+}
 
 SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind)
 {
@@ -457,12 +469,6 @@ void checkForStmt(AST_NODE* forNode)
     cur = cur->rightSibling;
     processStmtNode(cur);
 }
-
-
-void checkAssignmentStmt(AST_NODE* assignmentNode)
-{
-}
-
 
 void checkIfStmt(AST_NODE* ifNode)
 {
@@ -986,11 +992,17 @@ void checkReturnStmt(AST_NODE* returnNode)
             break;
         case IDENTIFIER_NODE:
         case CONST_VALUE_NODE:
-        case EXPR_NODE:
-            if(processExprRelatedNode(returnNode->child) != sign->returnType) {
-                printErrorMsg(funcNameNode, RETURN_TYPE_UNMATCH);
+        case EXPR_NODE: {
+            DATA_TYPE retType = processExprRelatedNode(returnNode->child);
+            if(retType != sign->returnType) {
+                if((retType == INT_TYPE && sign->returnType == FLOAT_TYPE)
+                    || (retType == FLOAT_TYPE && sign->returnType == INT_TYPE))
+                    printWarnMsg(funcNameNode, IMPLICIT_CONVERSION);
+                else
+                    printErrorMsg(funcNameNode, RETURN_TYPE_UNMATCH);
             }
             break;
+        }
         default :
             FATAL("Broken AST!");
     }
@@ -1359,8 +1371,10 @@ void dumpStmtNode(AST_NODE *node) {
     switch(stmt.kind) {
         case ASSIGN_STMT:
             printf("Kind : ASSIGN_STMT\n");
+            break;
         case RETURN_STMT:
             printf("Kind : RETURN_STMT\n");
+            break;
         default: break;
     }
 }
