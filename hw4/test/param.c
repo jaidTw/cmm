@@ -18,7 +18,7 @@ int main(){
   fun(b); /* error */
   fun(INT); /* error */
   fun(b[3]); /* error */
-	fun(b[3][10]);
+	fun(b[3][(2.0 > 6.3)]);
   fun(a + b); /* error */
   fun(fun(3)); /* error */
   f1(f1(2));

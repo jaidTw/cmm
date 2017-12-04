@@ -1,5 +1,5 @@
 typedef int VOID;
-typedef float VOID;
+typedef float VOID; /* error */
 typedef void VOIDD;
 
 void f(VOIDD i) {} /* error */

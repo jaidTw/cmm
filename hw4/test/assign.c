@@ -1,6 +1,6 @@
 typedef int INT;
 void foo() {}
-int bar() { return 1; }
+int bar() { return !1.5 < 3; }
 
 int main() {
    int a;
@@ -27,6 +27,8 @@ int main() {
    c = d[2]; /* error */
    c = d; /* error */
    c[3] = 5;
+   c[2]=1;
+   c[(1.5<2.3 + 3.0)]=3;
    c[2] = d[1];
    e[2][1] = 1;
    e[1] = 1; /*error */
