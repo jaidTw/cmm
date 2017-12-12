@@ -2,7 +2,6 @@
 #define __SYMBOL_TABLE_H__
 
 #include "header.h"
-// This file is for reference only, you are not required to follow the implementation. //
 
 
 //SYMBOL_TABLE_PREINSERT_NAME
@@ -11,11 +10,8 @@
 #define SYMBOL_TABLE_VOID_NAME "void"
 #define SYMBOL_TABLE_SYS_LIB_READ "read"
 #define SYMBOL_TABLE_SYS_LIB_FREAD "fread"
-#define SYMBOL_TABLE_SYS_LIB_WRITE "write"
 #define HASH_TABLE_SIZE 256
-#define TABLE_STACK_SIZE 16
-#define NAMESPACE_SEGMENT_SIZE 256
-#define NAMESPACE_SIZE 16
+
 
 typedef enum SymbolAttributeKind
 {
@@ -78,12 +74,10 @@ typedef struct SymbolTableEntry
 {
     struct SymbolTableEntry* nextInHashChain;
     struct SymbolTableEntry* prevInHashChain;
-/*
     struct SymbolTableEntry* nextInSameLevel;
     struct SymbolTableEntry* sameNameInOuterLevel;
-*/
-    int nameIndex;
-    int nameLength;
+
+    char* name;
     SymbolAttribute* attribute;
     int nestingLevel;
 
@@ -92,27 +86,11 @@ typedef struct SymbolTableEntry
 typedef struct SymbolTable
 {
     SymbolTableEntry* hashTable[HASH_TABLE_SIZE];
-/*
     SymbolTableEntry** scopeDisplay;
     int currentLevel;
     int scopeDisplayElementCount;
-*/
 } SymbolTable;
 
-typedef struct TableStack
-{
-    SymbolTable stack[TABLE_STACK_SIZE];
-    SymbolTableEntry** scopeDisplay;
-    int currentLevel;
-    int scopeDisplayElementCount;
-    int top;
-} TableStack;
-
-typedef struct NameSpace {
-    char *segments[NAMESPACE_SIZE];
-    int size;
-    int currentOffset;
-} NameSpace;
 
 void initializeSymbolTable();
 void symbolTableEnd();
@@ -120,18 +98,7 @@ SymbolTableEntry* retrieveSymbol(char* symbolName);
 SymbolTableEntry* enterSymbol(char* symbolName, SymbolAttribute* attribute);
 void removeSymbol(char* symbolName);
 int declaredLocally(char* symbolName);
-SymbolTable* currentScope();
 void openScope();
 void closeScope();
-
-void initializeNameSpace();
-void newSegment();
-int enterSymbolNS(char *symbolName);
-char *currentEmpty();
-int makeIndex(int offset, int segment);
-char *getName(int index);
-
-SymbolAttribute* newAttribute(SymbolAttributeKind attributeKind);
-TypeDescriptor* newTypeDesc(TypeDescriptorKind kind);
 
 #endif
