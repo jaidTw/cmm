@@ -62,7 +62,7 @@ typedef struct FunctionSignature
 typedef struct SymbolAttribute
 {
     SymbolAttributeKind attributeKind;
-
+    int global; // symbol is global?
     union
     {
         TypeDescriptor* typeDescriptor;

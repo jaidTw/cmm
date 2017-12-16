@@ -779,6 +779,8 @@ int main (__attribute__((unused)) int argc, char *argv[])
     if (!g_anyErrorOccur) {
     printf("Parsing completed. No errors found.\n");
     }
+    initializeSymbolTable(); 
+
     codeGeneration(prog);
     return 0;
 } /* main */
