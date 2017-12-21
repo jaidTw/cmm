@@ -13,6 +13,7 @@ int yylex(void);
 int yyerror(char *);
 
 extern int g_anyErrorOccur;
+extern void printGV(AST_NODE *root, char* fileName);
 
 static inline AST_NODE* makeSibling(AST_NODE *a, AST_NODE *b)
 {
@@ -774,14 +775,11 @@ int main (__attribute__((unused)) int argc, char *argv[])
     initializeSymbolTable();
 
     semanticAnalysis(prog);
+    if (!g_anyErrorOccur)
+        printf("Parsing completed. No errors found.\n");
+    codeGeneration(prog);
 
     symbolTableEnd();
-    if (!g_anyErrorOccur) {
-    printf("Parsing completed. No errors found.\n");
-    }
-    initializeSymbolTable(); 
-
-    codeGeneration(prog);
     return 0;
 } /* main */
 

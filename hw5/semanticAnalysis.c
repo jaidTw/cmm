@@ -593,8 +593,6 @@ void checkFunctionCall(AST_NODE* functionCallNode)
 void checkParameterPassing(Parameter* formalParameter, AST_NODE* actualParameter)
 {
     int actualParameterIsPtr = 0;
-    DATA_TYPE actualParameterDataType = NONE_TYPE;
-    actualParameterDataType = actualParameter->dataType;
     if(actualParameter->dataType == INT_PTR_TYPE || actualParameter->dataType == FLOAT_PTR_TYPE)
     {
         actualParameterIsPtr = 1;

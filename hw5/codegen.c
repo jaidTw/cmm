@@ -5,35 +5,72 @@
 #include "header.h"
 #include "symbolTable.h"
 
-enum MODE_TYPE {TextType, DataType};
+#define gencode(...) { fprintf(output, __VA_ARGS__); }
+#define genlabel(...) { fprintf(output, __VA_ARGS__); }
 
-FILE *output;
-int _offset; // count AR size
-int _const = 0; // constant for constants and statments
+#define ID_NAME(node) (node)->semantic_value.identifierSemanticValue.identifierName
+#define ID_KIND(node) (node)->semantic_value.identifierSemanticValue.kind
+#define CONST_TYPE(node) (node)->semantic_value.const1->const_type;
+#define _CONST_OF_int(node) (node)->semantic_value.const1->const_u.intval
+#define _CONST_OF_float(node) (node)->semantic_value.const1->const_u.fval
+#define CONST_VAL_OF(node, type) _CONST_OF_##type(node)
+#define STMT_KIND(node) (node)->semantic_value.stmtSemanticValue.kind
 
-int regs[32] = {0};
+static enum {NoneType, TextType, DataType} mode = NoneType;
 
-int getReg(){
+static FILE *output;
+static int _AR_offset; // count AR size
+static int _offset;
+static int _const = 0; // constant for constants and statments
+
+static int regs[32] = {0};
+
+int allocReg(){
     // candidates: x9-x15, x19-x29
     int i;
-    for(i = 9; i <= 15; i++){
-        if(!regs[i]){
-            regs[i] = 1;
-            return i;
-        }
-    }
-    for(i = 19; i <= 29; i++){
-        if(!regs[i]){
-            regs[i] = 1;
-            return i;
-        }
+    for(i = 9; i <= 29; i++){
+        if(i == 16) i = 19;
+        if(!regs[i]) return (regs[i] = 1);
     }
     printf("Out of registers\n");
     exit(1);
 }
 
-void freeReg(int reg){
+static __inline__ void freeReg(int reg){
     regs[reg] = 0;
+}
+
+static __inline__ void switchToText() {
+    if(mode != TextType)
+        genlabel(".text\n");
+}
+static __inline__ void switchToData() {
+    if(mode != DataType)
+        genlabel(".data\n");
+}
+
+static __inline__ void genRead(int offset) {
+    gencode("\tbl _read_int\n"
+            "\tmov w9, w0\n" /* maybe we should allocReg instead of fixed w9 */
+            "\tstr w9, [x29, #-%d]\n", offset);
+}
+
+static __inline__ void genFread(int offset) {
+    gencode("\tbl _read_float\n"
+            "\tfmov s16, s0\n"
+            "\tstr w9, [x29, #-%d]\n", offset);
+}
+
+static __inline__ void genWriteInt(int offset) {
+    gencode("\tldr w9, [x29, #-%d]\n"
+            "\tmov w0, w9\n"
+            "\tbl _write_int\n", offset);
+}
+
+static __inline__ void genWriteFloat(int offset) {
+    gencode("ldr s16, [x29, #-%d]"
+            "mov s0, s16"
+            "bl _write_float", offset);
 }
 
 void genPrologue(char *name);
@@ -60,34 +97,57 @@ void genVariableRvalue(AST_NODE *id_node);
 void genConstValueNode(AST_NODE *const_node);
 void genGeneralNode(AST_NODE *node);
 
-static __inline__ char* getIdByNode(AST_NODE *node) {
-    return node->semantic_value.identifierSemanticValue.identifierName;
-}
-
 void genGeneralNode(AST_NODE *node)
 {
-    AST_NODE *traverseChild = node->child;
+    AST_NODE *child= node->child;
     switch(node->nodeType){
         case VARIABLE_DECL_LIST_NODE:
-            //genLocalDeclarations(node);
+            genLocalDeclarations(node);
             break;
         case STMT_LIST_NODE:
             genStatementList(node);
             break;
         case NONEMPTY_ASSIGN_EXPR_LIST_NODE:
-            while(traverseChild){
-                genAssignOrExpr(traverseChild);
-                traverseChild = traverseChild->rightSibling;
+            while(child){
+                genAssignOrExpr(child);
+                child = child->rightSibling;
             }
             break;
         case NONEMPTY_RELOP_EXPR_LIST_NODE:
-            while(traverseChild){
-                genExprRelatedNode(traverseChild);
-                traverseChild = traverseChild->rightSibling;
+            while(child){
+                genExprRelatedNode(child);
+                child= child->rightSibling;
             }
             break;
         case NUL_NODE:
+        default:
             break;
+    }
+}
+
+void genLocalDeclarations(AST_NODE* node) {
+    for(AST_NODE *decl_node = node->child
+        ; decl_node
+        ; decl_node = decl_node->rightSibling) {
+        AST_NODE *type_node = decl_node->child;
+        /* TODO: type specific initialization */
+        if(type_node->dataType == INT_TYPE) {
+            _offset += 4;
+            /* insert into symbol table ? */
+        } else if(type_node->dataType == FLOAT_TYPE) {
+        }
+        if(ID_KIND(type_node->rightSibling) == WITH_INIT_ID) {
+            /* initialize */
+            AST_NODE *val_node = type_node->rightSibling->child;
+            if(type_node->dataType == INT_TYPE) {
+                int reg = allocReg();
+                node->place = reg;
+                gencode("\tmov x%d, #%d\n", reg, CONST_VAL_OF(val_node, int));
+                gencode("\tstr x%d, [x29, #-%d]\n", reg, _offset);
+            } else if(type_node->dataType == FLOAT_TYPE) {
+                /* TODO generate constant data and label*/
+            }
+        }
     }
 }
 
@@ -106,15 +166,17 @@ void genExprRelatedNode(AST_NODE *node){
         case CONST_VALUE_NODE:
             //genConstValueNode(node);
             break;
+        default:
+            break;
     }
 }
 
 void genAssignOrExpr(AST_NODE *node){
     if(node->nodeType == STMT_NODE){
-        if(node->semantic_value.stmtSemanticValue.kind == ASSIGN_STMT){
+        if(STMT_KIND(node) == ASSIGN_STMT){
             //genAssignmentStmt(node);
         }
-        else if(node->semantic_value.stmtSemanticValue.kind == FUNCTION_CALL_STMT){
+        else if(STMT_KIND(node) == FUNCTION_CALL_STMT){
             //genFunctionCall(node);
         }
     }
@@ -125,15 +187,10 @@ void genAssignOrExpr(AST_NODE *node){
 
 
 void genBlockNode(AST_NODE *block_node){
-    openScope();
-
-    AST_NODE *traverseListNode = block_node->child;
-    while(traverseListNode)
-    {
-        genGeneralNode(traverseListNode);
-        traverseListNode = traverseListNode->rightSibling;
-    }
-    closeScope();
+    for(AST_NODE *child = block_node->child
+        ; child
+        ; child = child->rightSibling)
+        genGeneralNode(child);
 }
 
 void genStmtNode(AST_NODE *stmt_node){
@@ -144,7 +201,7 @@ void genStmtNode(AST_NODE *stmt_node){
         genBlockNode(stmt_node);
     }
     else{
-        switch(stmt_node->semantic_value.stmtSemanticValue.kind){
+        switch(STMT_KIND(stmt_node)){
             case WHILE_STMT:
                 //genWhileStmt(stmt_node);
                 break;
@@ -168,17 +225,15 @@ void genStmtNode(AST_NODE *stmt_node){
 }
 
 void genStatementList(AST_NODE* stmt_list_node){
-    AST_NODE *stmt_list = stmt_list_node->child;
-    while(stmt_list){
+    for(AST_NODE *stmt_list = stmt_list_node->child
+        ; stmt_list
+        ; stmt_list = stmt_list->rightSibling)
         genStmtNode(stmt_list);
-        stmt_list = stmt_list->rightSibling;
-    }
 }
 
 void genGlobalDeclration(AST_NODE *decl){
     /* copy-past from semanticAnalysis.c */
     AST_NODE *type_node = decl->child;
-    processTypeNode(type_node);
     AST_NODE *id_list = type_node->rightSibling;
     while(id_list){
         SymbolAttribute * attribute = malloc(sizeof(SymbolAttribute));
@@ -221,7 +276,7 @@ void genGlobalDeclration(AST_NODE *decl){
         /* copy-past end */
         if(decl->semantic_value.declSemanticValue.kind == VARIABLE_DECL){
             if(attribute->attr.typeDescriptor->kind == SCALAR_TYPE_DESCRIPTOR){
-                fprintf(output, "_%s: .word 0\n", getIdByNode(id_list));
+                genlabel("_%s: .word 0\n", ID_NAME(id_list));
             }
             else{
                 int array_size = 4;
@@ -230,163 +285,90 @@ void genGlobalDeclration(AST_NODE *decl){
                 for(int i = 0; i < array_dim; ++i){
                    array_size *= array_dims[i];
                 }
-                fprintf(output, "_%s: .skip %d\n", getIdByNode(id_list), array_size);
+                genlabel("_%s: .skip %d\n", ID_NAME(id_list), array_size);
             }
         }
         attribute->global = 1;
-        id_list->semantic_value.identifierSemanticValue.symbolTableEntry =
-          enterSymbol(id_list->semantic_value.identifierSemanticValue.identifierName, attribute);
         id_list = id_list->rightSibling;
     }
 }
 
 void genGlobalDeclrations(AST_NODE *decl_list_node){
-    AST_NODE *decls = decl_list_node->child;
-    fprintf(output, ".data\n");
-    while(decls){
-        genGlobalDeclration(decls);
-        decls = decls->rightSibling;
-    }
+    for(AST_NODE *decl = decl_list_node->child
+        ; decl
+        ; decl = decl->rightSibling)
+        genGlobalDeclration(decl);
 }
 
-
 void genProgramNode(AST_NODE *program_node){
-    AST_NODE *global_decl_list = program_node->child;
-    while(global_decl_list){
-        if(global_decl_list->nodeType == VARIABLE_DECL_LIST_NODE){
+    for(AST_NODE *global_decl_list = program_node->child
+        ; global_decl_list
+        ; global_decl_list = global_decl_list->rightSibling) {
+        if(global_decl_list->nodeType == VARIABLE_DECL_LIST_NODE) 
             genGlobalDeclrations(global_decl_list);
-        }
-        else if(global_decl_list->nodeType == DECLARATION_NODE){
+        else if(global_decl_list->nodeType == DECLARATION_NODE)
             genFunctionDeclration(global_decl_list);
-        }
-        global_decl_list = global_decl_list->rightSibling;
     }
 }
 
 void genFunctionDeclration(AST_NODE *func_decl){
-    /* copy-past from semanticAnalysis.c */
-    AST_NODE* returnTypeNode = func_decl->child;
-    AST_NODE* functionNameID = returnTypeNode->rightSibling;
-    SymbolAttribute * attribute = NULL;
-    attribute = (SymbolAttribute*)malloc(sizeof(SymbolAttribute));
-    attribute->attributeKind = FUNCTION_SIGNATURE;
-    attribute->attr.functionSignature = (FunctionSignature*)malloc(sizeof(FunctionSignature));
-    attribute->attr.functionSignature->returnType = returnTypeNode->dataType;
-    attribute->attr.functionSignature->parameterList = NULL;
+    char *name = ID_NAME(func_decl->child->rightSibling);
+    AST_NODE *paramListNode = func_decl->child->rightSibling->rightSibling;
+    genPrologue(name);
 
-    enterSymbol(getIdByNode(functionNameID), attribute);
+    _offset = 0;
+    for(AST_NODE *list_node = paramListNode->rightSibling->child
+        ; list_node
+        ; list_node = list_node->rightSibling)
+        genGeneralNode(list_node);
 
-    openScope();
-
-    AST_NODE * parameterListNode = functionNameID->rightSibling;
-    AST_NODE * traverseParameter = parameterListNode->child;
-    int parametersCount = 0;
-    if(traverseParameter)
-    {
-        ++parametersCount;
-        processDeclarationNode(traverseParameter);
-        AST_NODE *parameterID = traverseParameter->child->rightSibling;
-        Parameter *parameter = (Parameter*)malloc(sizeof(Parameter));
-        parameter->next = NULL;
-        parameter->parameterName = parameterID->semantic_value.identifierSemanticValue.identifierName;
-        parameter->type = parameterID->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor;
-        attribute->attr.functionSignature->parameterList = parameter;
-        traverseParameter = traverseParameter->rightSibling;
-    }
-
-    Parameter *parameterListTail = attribute->attr.functionSignature->parameterList;
-
-    while(traverseParameter)
-    {
-        ++parametersCount;
-        processDeclarationNode(traverseParameter);
-        AST_NODE *parameterID = traverseParameter->child->rightSibling;
-        Parameter *parameter = (Parameter*)malloc(sizeof(Parameter));
-        parameter->next = NULL;
-        parameter->parameterName = parameterID->semantic_value.identifierSemanticValue.identifierName;
-        parameter->type = parameterID->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor;
-        parameterListTail->next = parameter;
-        parameterListTail = parameter;
-        traverseParameter = traverseParameter->rightSibling;
-    }
-    attribute->attr.functionSignature->parametersCount = parametersCount;
-    /* copy-past end*/
-
-    /* Prologue start */
-    fprintf(output, ".text\n");
-    fprintf(output, "_start_%s:\n", getIdByNode(functionNameID));
-    genPrologue(getIdByNode(functionNameID));
-    
-    AST_NODE *block_node = parameterListNode->rightSibling;
-    AST_NODE *block_list_node = block_node->child;
-    int offset;
-    while(block_list_node){
-        genGeneralNode(block_list_node);
-        block_list_node = block_list_node->rightSibling;
-    }
-    fprintf(output, "_end_%s:\n", getIdByNode(functionNameID));
-    genEpilogue(getIdByNode(functionNameID));
-    closeScope();
-}
-
-void genEpilogue(char *name){
-    int offset = 8;
-    int i;
-    for(i = 9; i <= 15; i++){
-        fprintf(output, "ldr x%d, [sp, #%d]\n", i, offset);
-        offset += 8;
-    }
-    for(i = 19; i <= 29; i++){
-        fprintf(output, "ldr x%d, [sp, #%d]\n", i, offset);
-        offset += 8;
-    }
-    for(i = 16; i <= 23; i++){
-        fprintf(output, "ldr s%d, [sp, #%d]\n", i, offset);
-        offset += 4;
-    }
-
-    fprintf(output, "ldr x30, [x29, #8]\n");
-    fprintf(output, "add sp, sp, #8\n");
-    fprintf(output, "ldr x29, [x29, #0]\n");
-    fprintf(output, "RET x30\n");
-
-    fprintf(output, ".data\n");
-    fprintf(output, "_frameSize_%s: .word %d\n", name, _offset);
-    fprintf(output, ".text\n");
-}
-
-void genPrologue(char *name){
-    fprintf(output, "str x30, [sp, #0]\n");
-    fprintf(output, "str x29, [sp, #-8]\n");
-    fprintf(output, "add x29, sp, #-8\n");
-    fprintf(output, "add sp, sp, #-16\n");
-    fprintf(output, "ldr x30, _frameSize_%s\n", name);
-    fprintf(output, "ldr w30, [x30, #0]\n");
-    fprintf(output, "sub sp, sp, w30\n");
-    
-    int offset = 8;
-    int i;
-    // caller saved registers
-    for(i = 9; i <= 15; i++){
-        fprintf(output, "str x%d, [sp, #%d]\n", i, offset);
-        offset += 8;
-    }
-    // callee saved registers
-    for(i = 19; i <= 29; i++){
-        fprintf(output, "str x%d, [sp, #%d]\n", i, offset);
-        offset += 8;
-    }
-    // TA's template
-    for(i = 16; i <= 23; i++){
-        fprintf(output, "str s%d, [sp, #%d]\n", i, offset);
-        offset += 4;
-    }
-    
-    _offset = offset - 4;
+    genEpilogue(name);
 }
 
 void codeGeneration(AST_NODE *root) {
     output = fopen("output.s", "w");
     genProgramNode(root);
     fclose(output);
+}
+
+void genEpilogue(char *name){
+    genlabel("_end_%s:\n", name);
+
+    int i, offset = 8;
+    for(i = 9; i <= 15; i++, offset += 8)
+        gencode("\tldr x%d, [sp, #%d]\n", i, offset);
+    for(i = 19; i <= 29; i++, offset += 8)
+        gencode("\tldr x%d, [sp, #%d]\n", i, offset);
+
+    gencode("\tldr x30, [x29, #8]\n"
+            "\tadd sp, sp, #8\n"
+            "\tldr x29, [x29, #0]\n"
+            "\tret x30\n");
+    switchToData();
+    gencode("\t_frameSize_%s: .word %d\n", name, _AR_offset);
+    switchToText();
+}
+
+void genPrologue(char *name){
+    switchToText();
+    genlabel("_start_%s:\n", name);
+    gencode("\tstr x30, [sp, #0]\n"
+            "\tstr x29, [sp, #-8]\n"
+            "\tadd x29, sp, #-8\n"
+            "\tadd sp, sp, #-16\n"
+            "\tldr x30, =_frameSize_%s\n"
+            "\tldr w30, [x30, #0]\n"
+            "\tsub sp, sp, w30\n", name);
+    
+    int offset = 8;
+    int i;
+    // caller saved registers
+    for(i = 9; i <= 15; i++, offset += 8)
+        gencode("\tstr x%d, [sp, #%d]\n", i, offset);
+    // callee saved registers
+    for(i = 19; i <= 29; i++, offset += 8)
+        gencode("\tstr x%d, [sp, #%d]\n", i, offset);
+
+    _AR_offset = offset - 4;
+    genlabel("_begin_%s:\n", name);
 }
