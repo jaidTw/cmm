@@ -5,21 +5,45 @@
 #include "header.h"
 #include "symbolTable.h"
 
-#define GENCODE(fmt, ...) { fprintf(output, "\t" fmt "\n", ##__VA_ARGS__); }
-#define GENLABEL(name, ...) { fprintf(output, name ":\n" , ##__VA_ARGS__); }
-#define ALIGN(size) { fprintf(output, "\t.align %d\n", size); }
+/* code generation macros */
+#define GEN_CODE(fmt, ...)      { fprintf(output, "\t" fmt "\n", ##__VA_ARGS__); }
+#define GEN_LABEL(name, ...)    { fprintf(output, name ":\n" , ##__VA_ARGS__); }
+#define __GEN_LITERAL_int(val)   { fprintf(output, "\t_CONST_%d: .word %d\n", _const, val); }
+#define __GEN_LITERAL_float(val) { fprintf(output, "\t_CONST_%d: .float %f\n", _const, val); }
+#define __GEN_LITERAL_str(val)   { fprintf(output, "\t_CONST_%d: .string %s\n", _const, val); }
+#define GEN_LITERAL(type, val)  { _const++; __GEN_LITERAL_##type(val); }
+#define __GEN_GLOBAL_int(name, val)   { fprintf(output, "\t_%s: .word %d\n", name, val); }
+#define __GEN_GLOBAL_float(name, val) { fprintf(output, "\t_%s: .float %f\n", name, val); }
+#define __GEN_GLOBAL_array(name, val) { fprintf(output, "\t_%s: .zero %d\n", name, val); }
+#define GEN_GLOBAL(type, name, val)  { __GEN_GLOBAL_##type(name, val); }
+#define ALIGN(size)             { fprintf(output, "\t.align %d\n", size); }
+#define GEN_OP(type, op, d, n, m) { \
+    GEN_CODE("%1$s"#op"  %2$c%3$d, %2$c%4$d, %2$c%5$d", \
+        type == INT_TYPE ? "" : "f", \
+        type == INT_TYPE ? 'w' : 's', \
+        d, n, m); \
+}
 
-#define CONST_TYPE(node) (node)->semantic_value.const1->const_type
-#define _CONST_OF_int(node) (node)->semantic_value.const1->const_u.intval
-#define _CONST_OF_float(node) (node)->semantic_value.const1->const_u.fval
-#define _CONST_OF_str(node) (node)->semantic_value.const1->const_u.sc
-#define CONST_VAL(node, type) _CONST_OF_##type(node)
+/* semantic macros */
+#define CONST_TYPE(node)        (node)->semantic_value.const1->const_type
+#define __CONST_OF_int(node)    (node)->semantic_value.const1->const_u.intval
+#define __CONST_OF_float(node)  (node)->semantic_value.const1->const_u.fval
+#define __CONST_OF_str(node)    (node)->semantic_value.const1->const_u.sc
+#define CONST_VAL(node, type)   __CONST_OF_##type(node)
 
-#define IS_LOCAL(node) (ENTRY(node)->nestingLevel > 0)
-#define NAME(node)  (node)->semantic_value.identifierSemanticValue.identifierName
-#define STMT(node)  (node)->semantic_value.stmtSemanticValue
-#define ID(node)    (node)->semantic_value.identifierSemanticValue
-#define ENTRY(node) (node)->semantic_value.identifierSemanticValue.symbolTableEntry
+#define SIGN(node)        ENTRY(node)->attribute->attr.functionSignature
+#define DESC(node)        ENTRY(node)->attribute->attr.typeDescriptor
+#define IS_VAR(node)      (ENTRY(node)->attribute->attributeKind == VARIABLE_ATTRIBUTE)
+#define IS_TYPE(node)     (ENTRY(node)->attribute->attributeKind == TYPE_ATTRIBUTE)
+#define IS_FUNC(node)     (ENTRY(node)->attribute->attributeKind == FUNCTION_SIGNATURE)
+#define ARRAY_PROP(node)  DESC(node)->properties.arrayProperties
+#define IS_SCALAR(node)   (DESC(id)->kind == SCALAR_TYPE_DESCRIPTOR)
+#define IS_LOCAL(node)    (ENTRY(node)->nestingLevel > 0)
+#define NAME(node)        (node)->semantic_value.identifierSemanticValue.identifierName
+#define STMT(node)        (node)->semantic_value.stmtSemanticValue
+#define EXPR(node)        (node)->semantic_value.exprSemanticValue
+#define ID(node)          (node)->semantic_value.identifierSemanticValue
+#define ENTRY(node)       (node)->semantic_value.identifierSemanticValue.symbolTableEntry
 
 #define FATAL(x) { \
     fprintf(stderr, "Fatal : " x "\nAborted.\n"); \
@@ -31,11 +55,13 @@
         ; (name) \
         ; (name) = (name)->rightSibling)
 
-static enum {NoneType, TextType, DataType} mode = NoneType;
+static enum {None, Text, Data} mode = None;
+#define SWITCH_TO(type) if(mode != type) fprintf(output, "."#type"\n");
 
 static FILE *output;
 static int _AR_offset;
 static int _local_var_offset;
+static int _label_count;
 static int _const; // constant for constants and statments
 static int regs[32];
 static int FPregs[32];
@@ -63,44 +89,21 @@ int __allocReg_float(){
 
 #define allocReg(type) __allocReg_##type()
 
-static __inline__ void __freeReg_int(int reg) { regs[reg] = 0 ; }
+static __inline__ void __freeReg_int(int reg) { regs[reg] = 0; }
 static __inline__ void __freeReg_float(int reg) {FPregs[reg] = 0; }
 #define freeReg(reg, type) __freeReg_##type(reg)
 
-static __inline__ void switchToText() {
-    if(mode != TextType) fprintf(output, ".text\n");
-}
-
-static __inline__ void switchToData() {
-    if(mode != DataType) fprintf(output, ".data\n");
-}
-
-static __inline__ void genRead() {
-    GENCODE("bl _read_int");
-}
-
-static __inline__ void genFread() {
-    GENCODE("bl _read_float");
-}
-
-static __inline__ void genWriteInt(int reg) {
-    GENCODE("mov w0, w%d", reg);
-    GENCODE("bl _write_int");
-}
-
-static __inline__ void genWriteFloat(int reg) {
-    GENCODE("fmov s0, s%d", reg);
-    GENCODE("bl _write_float");
-}
-
-static __inline__ void genWriteStr(int reg) {
-    GENCODE("mov x0, x%d", reg);
-    GENCODE("bl _write_str");
+static __inline__ void genWrite(int reg, DATA_TYPE type) {
+    GEN_CODE("%1$smov %2$c0, %2$c%3$d",
+        type == FLOAT_TYPE ? "f" : "",
+        type == FLOAT_TYPE ? 's' : type == INT_TYPE ? 'w' : 'x',
+        reg);
+    GEN_CODE("bl _write_%s",
+        type == INT_TYPE ? "int" : type == FLOAT_TYPE ? "float" : "str");
 }
 
 void genPrologue(char *name);
 void genEpilogue(char *name);
-
 void genAssignOrExpr(AST_NODE *node);
 void genExprRelatedNode(AST_NODE *node);
 void genExprNode(AST_NODE *expr_node);
@@ -113,6 +116,7 @@ void genReturnStmt(AST_NODE *return_node);
 void genIfStmt(AST_NODE *if_node);
 void genStmtNode(AST_NODE *stmt_node);
 void genStatementList(AST_NODE* stmt_list_node);
+void genLocalDeclaration(AST_NODE* node);
 void genLocalDeclarations(AST_NODE* decl_list_node);
 void genGlobalDeclration(AST_NODE *decl);
 void genGlobalDeclrations(AST_NODE *decl_list_node);
@@ -146,21 +150,33 @@ void genGeneralNode(AST_NODE *node)
 }
 
 void genLocalDeclarations(AST_NODE* node) {
-    FOR_SIBLINGS(decl_node, node->child) {
-        AST_NODE *type_node = decl_node->child;
-        /* TODO: type specific initialization */
-        SymbolTableEntry *entry = ENTRY(type_node->rightSibling);
-        _local_var_offset += 4;
-        entry->offset = _local_var_offset;
-        if(ID(type_node->rightSibling).kind == WITH_INIT_ID) {
-            /* initialize */
-            AST_NODE *relop = type_node->rightSibling->child;
-            genExprRelatedNode(relop);
-            GENCODE("str %c%d, [x29, #-%d]",
-                type_node->dataType == INT_TYPE ? 'w' : 's',
-                relop->place, entry->offset);
-            type_node->dataType == INT_TYPE ?
-                freeReg(relop->place, int) : freeReg(relop->place, float);
+    FOR_SIBLINGS(decl_node, node->child)
+      genLocalDeclaration(decl_node);
+}
+
+void genLocalDeclaration(AST_NODE* node) {
+    AST_NODE *type_node = node->child;
+    FOR_SIBLINGS(id, type_node->rightSibling) {
+        SymbolTableEntry *entry = ENTRY(id);
+        if(IS_SCALAR(id)) {
+            _local_var_offset += 4;
+            entry->offset = _local_var_offset;
+            if(ID(id).kind == WITH_INIT_ID) {
+                AST_NODE *relop = id->child;
+                genExprRelatedNode(relop);
+                GEN_CODE("str %c%d, [x29, #-%d]",
+                    type_node->dataType == INT_TYPE ? 'w' : 's',
+                    relop->place, entry->offset);
+                type_node->dataType == INT_TYPE ?
+                    freeReg(relop->place, int) : freeReg(relop->place, float);
+            }
+        } else {
+            int size = 4;
+            for(int dim = 0 ; dim < ARRAY_PROP(id).dimension; ++dim) {
+                size *= ARRAY_PROP(id).sizeInEachDimension[dim];
+            }
+            _local_var_offset += size;
+            entry->offset = _local_var_offset;
         }
     }
 }
@@ -168,7 +184,7 @@ void genLocalDeclarations(AST_NODE* node) {
 void genExprRelatedNode(AST_NODE *node) {
     switch(node->nodeType){
         case EXPR_NODE:
-            //genExprNode(node);
+            genExprNode(node);
             break;
         case STMT_NODE:
             genFunctionCall(node);
@@ -186,35 +202,41 @@ void genExprRelatedNode(AST_NODE *node) {
 
 void genAssignOrExpr(AST_NODE *node) {
     if(node->nodeType == STMT_NODE){
-        if(STMT(node).kind == ASSIGN_STMT){
-            //genAssignmentStmt(node);
-        }
-        else if(STMT(node).kind == FUNCTION_CALL_STMT){
+        if(STMT(node).kind == ASSIGN_STMT)
+            genAssignmentStmt(node);
+        else if(STMT(node).kind == FUNCTION_CALL_STMT)
             genFunctionCall(node);
-        }
-    }
-    else{
+    } else{
         genExprRelatedNode(node);
     }
 }
 
 void genFunctionCall(AST_NODE *node) {
+    node->place = 0;
     char *func_name = NAME(node->child);
     AST_NODE *relop_expr = node->child->rightSibling;
-    genExprRelatedNode(relop_expr->child);
-    relop_expr->place = relop_expr->child->place;
     if(!strcmp(func_name, "write")) {
-        if(relop_expr->child->dataType == INT_TYPE)
-            genWriteInt(relop_expr->place);
-        else if(relop_expr->child->dataType == FLOAT_TYPE)
-            genWriteFloat(relop_expr->place);
-        else if(relop_expr->child->dataType == CONST_STRING_TYPE)
-            genWriteStr(relop_expr->place);
-    }
-    else if(!strcmp(func_name, "read"))
-        ;
-    else if(!strcmp(func_name, "fread"))
-        ;
+        genExprRelatedNode(relop_expr->child);
+        relop_expr->place = relop_expr->child->place;
+        DATA_TYPE type = relop_expr->child->dataType;
+        genWrite(relop_expr->place, type);
+        if(type == FLOAT_TYPE)
+            freeReg(relop_expr->place, float);
+        else
+            freeReg(relop_expr->place, int);
+    } else if(SIGN(node->child)->parametersCount > 0) {
+        /* eval each parameters */
+        genExprRelatedNode(relop_expr->child);
+        relop_expr->place = relop_expr->child->place;
+        /* pass arguments */
+        GEN_CODE("bl _start_%s", func_name);
+        return ;
+    } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_READ)) {
+        GEN_CODE("bl _read_int");
+    } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_FREAD)) {
+        GEN_CODE("bl _read_float");
+    } else
+        GEN_CODE("bl _start_%s", func_name);
 }
 
 
@@ -239,7 +261,7 @@ void genStmtNode(AST_NODE *stmt_node){
                 //genForStmt(stmt_node);
                 break;
             case ASSIGN_STMT:
-                //genAssignmentStmt(stmt_node);
+                genAssignmentStmt(stmt_node);
                 break;
             case IF_STMT:
                 //genIfStmt(stmt_node);
@@ -262,82 +284,230 @@ void genStatementList(AST_NODE* node){
 void genGlobalDeclration(AST_NODE *decl){
     /* copy-past from semanticAnalysis.c */
     AST_NODE *type_node = decl->child;
-    AST_NODE *id_list = type_node->rightSibling;
-    while(id_list){
-        SymbolAttribute * attribute = malloc(sizeof(SymbolAttribute));
-        if(decl->semantic_value.declSemanticValue.kind == VARIABLE_DECL){
-            attribute->attributeKind = VARIABLE_ATTRIBUTE;
-        }
-        else{
-            attribute->attributeKind = TYPE_ATTRIBUTE;
-        }
-        switch(id_list->semantic_value.identifierSemanticValue.kind){
-            case NORMAL_ID:
-                attribute->attr.typeDescriptor = type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor;
-                break;
-            case WITH_INIT_ID:
-                attribute->attr.typeDescriptor = type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor;
-                break;
-            case ARRAY_ID:
-                attribute->attr.typeDescriptor = (TypeDescriptor*)malloc(sizeof(TypeDescriptor));
-                processDeclDimList(id_list, attribute->attr.typeDescriptor, 0);
-                if(type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor->kind == SCALAR_TYPE_DESCRIPTOR){
-                    attribute->attr.typeDescriptor->properties.arrayProperties.elementType =
-                        type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor->properties.dataType;
-                }else if(type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor->kind == ARRAY_TYPE_DESCRIPTOR){
-                    int typeArrayDimension = type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
-                    int idArrayDimension = attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
-                    attribute->attr.typeDescriptor->properties.arrayProperties.elementType = 
-                        type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor->properties.arrayProperties.elementType;
-                    attribute->attr.typeDescriptor->properties.arrayProperties.dimension = 
-                        typeArrayDimension + idArrayDimension;
-                    int indexType = 0;
-                    int indexId = 0;
-                    for(indexType = 0, indexId = idArrayDimension; indexId < idArrayDimension + typeArrayDimension; ++indexType, ++indexId)
-                    {
-                        attribute->attr.typeDescriptor->properties.arrayProperties.sizeInEachDimension[indexId] = 
-                            type_node->semantic_value.identifierSemanticValue.symbolTableEntry->attribute->attr.typeDescriptor->properties.arrayProperties.sizeInEachDimension[indexType];
+    FOR_SIBLINGS(id, type_node->rightSibling) {
+        if(IS_TYPE(id))
+            continue;
+        if(IS_SCALAR(id)) {
+            if(ID(id).kind == WITH_INIT_ID) {
+                if(type_node->dataType == INT_TYPE){
+                    if(id->child->nodeType == EXPR_NODE
+                       && EXPR(id->child).isConstEval) {
+                        GEN_GLOBAL(int, NAME(id), EXPR(id->child).constEvalValue.iValue);
+                    } else if(id->child->nodeType == CONST_VALUE_NODE) {
+                        GEN_GLOBAL(int, NAME(id), CONST_VAL(id->child, int));
                     }
-                 }
-            break;
-        }
-        /* copy-past end */
-        if(decl->semantic_value.declSemanticValue.kind == VARIABLE_DECL){
-            if(attribute->attr.typeDescriptor->kind == SCALAR_TYPE_DESCRIPTOR){
-                fprintf(output, "_%s: .word 0\n", NAME(id_list));
-            }
-            else{
-                int array_size = 4;
-                int array_dim = attribute->attr.typeDescriptor->properties.arrayProperties.dimension;
-                int * array_dims = attribute->attr.typeDescriptor->properties.arrayProperties.sizeInEachDimension;
-                for(int i = 0; i < array_dim; ++i){
-                   array_size *= array_dims[i];
+                } else {
+                    if(id->child->nodeType == EXPR_NODE
+                       && EXPR(id->child).isConstEval) {
+                        GEN_GLOBAL(float, NAME(id), EXPR(id->child).constEvalValue.fValue);
+                    } else if(id->child->nodeType == CONST_VALUE_NODE) {
+                        GEN_GLOBAL(float, NAME(id), CONST_VAL(id->child, float));
+                    }
                 }
-               fprintf(output, "_%s: .skip %d\n", NAME(id_list), array_size);
+            } else {
+                if(type_node->dataType == INT_TYPE) {
+                    GEN_GLOBAL(int, NAME(id), 0);
+                } else{
+                    GEN_GLOBAL(float, NAME(id), .0);
+                }
+            }
+        } else {
+            int size = 4;
+            for(int dim = 0 ; dim < ARRAY_PROP(id).dimension; ++dim) {
+                size *= ARRAY_PROP(id).sizeInEachDimension[dim];
+            }
+            GEN_GLOBAL(array, NAME(id), size);
+        }
+    }
+}
+
+void genExprNode(AST_NODE *node) {
+    if(EXPR(node).isConstEval) {
+        if(node->dataType == INT_TYPE) {
+            node->place = allocReg(int);
+            GEN_CODE("mov w%d, #%d", node->place, EXPR(node).constEvalValue.iValue);
+        }
+        else if(node->dataType == FLOAT_TYPE) {
+            node->place = allocReg(float);
+            SWITCH_TO(Data);
+            GEN_LITERAL(float, EXPR(node).constEvalValue.fValue);
+            SWITCH_TO(Text);
+            GEN_CODE("ldr s%d, _CONST_%d", node->place, _const);
+        }
+        return ;
+    }
+    // unary or binary ?
+    if(EXPR(node).kind == UNARY_OPERATION) {
+        genExprRelatedNode(node->child);
+        switch(EXPR(node).op.unaryOp) {
+            case UNARY_OP_NEGATIVE:
+                node->place = node->child->place;
+                GEN_CODE("%1$sneg %2$c%3$d, %2$c%3$d",
+                    node->dataType == INT_TYPE ? "" : "f",
+                    node->dataType == INT_TYPE ? 'w' : 's',
+                    node->child->place);
+                break;
+            case UNARY_OP_LOGICAL_NEGATION:
+                GEN_CODE("%scmp %c%d, #0",
+                    node->child->dataType == INT_TYPE ? "" : "f",
+                    node->child->dataType == INT_TYPE ? 'w' : 's',
+                    node->child->place);
+                if(node->child->dataType == FLOAT_TYPE) {
+                    node->place = allocReg(int);
+                    freeReg(node->child->place, float);
+                    node->dataType = INT_TYPE;
+                }
+                GEN_CODE("cset w%d, EQ", node->place);
+            default:
+                break;
+        }
+    } else {
+        AST_NODE *lhs = node->child;
+        AST_NODE *rhs = lhs->rightSibling;
+        genExprRelatedNode(lhs);
+        switch(EXPR(node).op.binaryOp) {
+            /* delay eval of rhs for short-circuit logical ops */
+            case BINARY_OP_ADD ... BINARY_OP_LT:
+                genExprRelatedNode(rhs);
+                break;
+            default: break;
+        }
+
+        if(lhs->dataType == rhs->dataType && lhs->dataType == FLOAT_TYPE) {
+            switch(EXPR(node).op.binaryOp) {
+                /* EQ, GE, LE, NE, GT, LT, AND, OR produce int result
+                 * we need an integer register for result
+                 * */
+                case BINARY_OP_EQ ... BINARY_OP_OR:
+                    node->dataType = INT_TYPE;
+                    node->place = allocReg(int);
+                    break;
+                /* use lhs as result for arithmetic ops */
+                default:
+                    node->place = lhs->place;
+                    break;
+            }
+        } else if(lhs->dataType != rhs->dataType) {
+            node->dataType = FLOAT_TYPE;
+            if(EXPR(node).op.binaryOp != BINARY_OP_AND
+               && EXPR(node).op.binaryOp != BINARY_OP_OR) {
+                /* TODO: insert type conversion instructions */
+                node->place = allocReg(int);
+            } else {
+                /* reuse reg of int side */
+                if(lhs->dataType == INT_TYPE)
+                    node->place = lhs->place;
+                else
+                    node->place = rhs->place;
+            }
+        } else {
+            /* lhs & rhs is int, use lhs as destination */
+            node->dataType = lhs->dataType;
+            node->place = lhs->place;
+        }
+
+        /* now operands will be both float or int */
+        switch(EXPR(node).op.binaryOp) {
+            case BINARY_OP_ADD ... BINARY_OP_DIV:
+                if(EXPR(node).op.binaryOp == BINARY_OP_ADD) {
+                    GEN_OP(node->dataType, add, lhs->place, lhs->place, rhs->place);
+                } else if(EXPR(node).op.binaryOp == BINARY_OP_SUB) {
+                    GEN_OP(node->dataType, sub, lhs->place, lhs->place, rhs->place);
+                } else if(EXPR(node).op.binaryOp == BINARY_OP_MUL) {
+                    GEN_OP(node->dataType, mul, lhs->place, lhs->place, rhs->place);
+                } else if(EXPR(node).op.binaryOp == BINARY_OP_DIV) {
+                    GEN_OP(node->dataType, div, lhs->place, lhs->place, rhs->place);
+                }
+
+                if(node->dataType == INT_TYPE)
+                    freeReg(rhs->place, int);
+                else
+                    freeReg(rhs->place, float);
+                break;
+                /* EQ, GE, LE, NE, GT, LT*/
+            case BINARY_OP_EQ ... BINARY_OP_LT:
+                GEN_CODE("%1$scmp %2$c%3$d, %2$c%4$d",
+                    node->dataType == INT_TYPE ? "" : "f",
+                    node->dataType == INT_TYPE ? 'w' : 's',
+                    lhs->place, rhs->place);
+
+                GEN_CODE("cset w%d, %s", node->place,
+                    EXPR(node).op.binaryOp == BINARY_OP_EQ ? "eq" : \
+                    EXPR(node).op.binaryOp == BINARY_OP_GE ? "ge" : \
+                    EXPR(node).op.binaryOp == BINARY_OP_LE ? "le" : \
+                    EXPR(node).op.binaryOp == BINARY_OP_NE ? "ne" : \
+                    EXPR(node).op.binaryOp == BINARY_OP_GT ? "gt" : "lt");
+
+                if(lhs->dataType == FLOAT_TYPE)
+                    freeReg(lhs->place, int);
+                if(rhs->dataType == INT_TYPE)
+                    freeReg(rhs->place, int);
+                if(rhs->dataType == FLOAT_TYPE)
+                    freeReg(rhs->place, float);
+                break;
+            case BINARY_OP_AND:
+            case BINARY_OP_OR:{
+                /* eval lhs */
+                GEN_CODE("%scmp %c%d, #0",
+                    lhs->dataType == INT_TYPE ? "" : "f",
+                    lhs->dataType == INT_TYPE ? 'w' : 's',
+                    lhs->place);
+                int short_circuit_label = ++_label_count;
+                int end_label = ++_label_count;
+                GEN_CODE("b.%s _L%d",
+                    EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
+                    short_circuit_label);
+
+                /* eval rhs */
+                genExprRelatedNode(rhs);
+                GEN_CODE("%scmp %c%d, #0",
+                    rhs->dataType == INT_TYPE ? "" : "f",
+                    rhs->dataType == INT_TYPE ? 'w' : 's',
+                    rhs->place);
+
+                GEN_CODE("b.%s _L%d",
+                    EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
+                    short_circuit_label);
+                GEN_CODE("mov w%d, %d", node->place,
+                    EXPR(node).op.binaryOp == BINARY_OP_AND ? 1 : 0);
+                GEN_CODE("b _L%d", end_label);
+                GEN_LABEL("_L%d", short_circuit_label);
+                GEN_CODE("mov w%d, %d", node->place,
+                    EXPR(node).op.binaryOp == BINARY_OP_AND ? 0 : 1);
+                GEN_LABEL("_L%d", end_label);
+                if(lhs->dataType == rhs->dataType) {
+                    if(lhs->dataType == INT_TYPE) {
+                        freeReg(rhs->place, int);
+                    } else {
+                        freeReg(lhs->place, float);
+                        freeReg(rhs->place, float);
+                    }
+                } else {
+                    if(lhs->dataType == INT_TYPE)
+                        freeReg(rhs->place, float);
+                    else
+                        freeReg(lhs->place, float);
+                }
+                break;
             }
         }
-        attribute->global = 1;
-        id_list = id_list->rightSibling;
     }
 }
 
 void genVariableRvalue(AST_NODE *id_node) {
     if(id_node->dataType == INT_TYPE)
         id_node->place = allocReg(int);
-    else if(id_node->dataType == FLOAT_TYPE)
-        id_node->place = allocReg(float);
     else
-        FATAL("invalid type");
+        id_node->place = allocReg(float);
 
-    /* localor global */
     if(IS_LOCAL(id_node)) {
         /* TODO: array */
-        GENCODE("ldr %c%d, [x29, #-%d]",
+        GEN_CODE("ldr %c%d, [x29, #-%d]",
             id_node->dataType == INT_TYPE ? 'w' : 's',
             id_node->place, ENTRY(id_node)->offset);
     } else {
         /* TODO: array */
-        GENCODE("ldr %c%d, =_%s",
+        GEN_CODE("ldr %c%d, _%s",
             id_node->dataType == INT_TYPE ? 'w' : 's',
             id_node->place, NAME(id_node));
     }
@@ -346,24 +516,50 @@ void genVariableRvalue(AST_NODE *id_node) {
 void genConstValueNode(AST_NODE *node) {
     if(CONST_TYPE(node) == INTEGERC) {
         node->place = allocReg(int);
-        GENCODE("mov w%d, #%d", node->place, CONST_VAL(node, int));
+        GEN_CODE("mov w%d, #%d", node->place, CONST_VAL(node, int));
     } else if(CONST_TYPE(node) == FLOATC) {
         node->place = allocReg(float);
-        switchToData();
-        GENCODE("_CONST_%d: .float %f", ++_const, CONST_VAL(node, float));
-        switchToText();
-        GENCODE("ldr s%d, _CONST_%d", node->place, _const);
+        SWITCH_TO(Data);
+        GEN_LITERAL(float, CONST_VAL(node, float));
+        SWITCH_TO(Text);
+        GEN_CODE("ldr s%d, _CONST_%d", node->place, _const);
     } else {
         node->place = allocReg(int);
-        switchToData();
-        GENCODE("_CONST_%d: .string %s", ++_const, CONST_VAL(node, str));
+        SWITCH_TO(Data);
+        GEN_LITERAL(str, CONST_VAL(node, str));
         ALIGN(4);
-        switchToText();
-        GENCODE("ldr x%d, =_CONST_%d", node->place, _const);
+        SWITCH_TO(Text);
+        GEN_CODE("ldr x%d, =_CONST_%d", node->place, _const);
+    }
+}
+
+void genAssignmentStmt(AST_NODE *node) {
+    AST_NODE *lhs = node->child, *rhs = node->child->rightSibling;
+    genExprRelatedNode(rhs);
+    if(lhs->dataType == rhs->dataType) {
+        if(IS_LOCAL(lhs)) {
+            GEN_CODE("str %c%d, [x29, #-%d]",
+                lhs->dataType == INT_TYPE ? 'w' : 's',
+                rhs->place,
+                ENTRY(lhs)->offset);
+        } else {
+            int temp = allocReg(int);
+            GEN_CODE("ldr x%d, =_%s", temp, NAME(lhs));
+            GEN_CODE("str %c%d, [x%d]",
+                lhs->dataType == INT_TYPE ? 'w' : 's',
+                rhs->place, temp);
+        }
+        if(rhs->dataType == INT_TYPE)
+            freeReg(rhs->place, int);
+        else
+            freeReg(rhs->place, float);
+    } else {
+        /* type conversion */
     }
 }
 
 void genGlobalDeclrations(AST_NODE *node){
+    SWITCH_TO(Data);
     FOR_SIBLINGS(decl, node->child)
         genGlobalDeclration(decl);
 }
@@ -397,42 +593,42 @@ void codeGeneration(AST_NODE *root) {
 }
 
 void genPrologue(char *name){
-    switchToText();
-    GENLABEL("_start_%s", name);
-    GENCODE("str x30, [sp, #0]");
-    GENCODE("str x29, [sp, #-8]");
-    GENCODE("add x29, sp, #-8");
-    GENCODE("add sp, sp, #-16");
-    GENCODE("ldr x30, =_frameSize_%s", name);
-    GENCODE("ldr w30, [x30, #0]");
-    GENCODE("sub sp, sp, w30");
+    SWITCH_TO(Text);
+    GEN_LABEL("_start_%s", name);
+    GEN_CODE("str x30, [sp, #0]");
+    GEN_CODE("str x29, [sp, #-8]");
+    GEN_CODE("add x29, sp, #-8");
+    GEN_CODE("add sp, sp, #-16");
+    GEN_CODE("ldr x30, =_frameSize_%s", name);
+    GEN_CODE("ldr w30, [x30, #0]");
+    GEN_CODE("sub sp, sp, w30");
 
     int offset = 8;
     // push callee saved registers
     for(int i = 19; i <= 29; i++, offset += 8)
-        GENCODE("str x%d, [sp, #%d]", i, offset);
+        GEN_CODE("str x%d, [sp, #%d]", i, offset);
     // VFP regs
     for(int i = 16; i <= 23; i++, offset += 8)
-        GENCODE("ldr s%d, [sp, #%d]", i, offset);
+        GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
 
     _AR_offset = offset;
-    GENLABEL("_begin_%s", name);
+    GEN_LABEL("_begin_%s", name);
 }
 
 void genEpilogue(char *name){
-    GENLABEL("_end_%s", name);
+    GEN_LABEL("_end_%s", name);
 
     int offset = 8;
     for(int i = 19; i <= 29; i++, offset += 8)
-        GENCODE("ldr x%d, [sp, #%d]", i, offset);
+        GEN_CODE("ldr x%d, [sp, #%d]", i, offset);
     for(int i = 16; i <= 23; i++, offset += 8)
-        GENCODE("ldr s%d, [sp, #%d]", i, offset);
+        GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
 
-    GENCODE("ldr x30, [x29, #8]")
-    GENCODE("add sp, x29, #8")
-    GENCODE("ldr x29, [x29, #0]")
-    GENCODE("ret x30");
-    switchToData();
-    fprintf(output, "_frameSize_%s: .word %d\n", name, _AR_offset);
-    switchToText();
+    GEN_CODE("ldr x30, [x29, #8]");
+    GEN_CODE("add sp, x29, #8");
+    GEN_CODE("ldr x29, [x29, #0]");
+    GEN_CODE("ret x30");
+    SWITCH_TO(Data);
+    GEN_CODE("_frameSize_%s: .word %d\n", name, _AR_offset);
+    SWITCH_TO(Text);
 }
