@@ -6,17 +6,17 @@
 #include "symbolTable.h"
 
 /* code generation macros */
-#define GEN_CODE(fmt, ...)      { fprintf(output, "\t" fmt "\n", ##__VA_ARGS__); }
-#define GEN_LABEL(name, ...)    { fprintf(output, name ":\n" , ##__VA_ARGS__); }
-#define __GEN_LITERAL_int(val)   { fprintf(output, "\t_CONST_%d: .word %d\n", _const, val); }
-#define __GEN_LITERAL_float(val) { fprintf(output, "\t_CONST_%d: .float %f\n", _const, val); }
-#define __GEN_LITERAL_str(val)   { fprintf(output, "\t_CONST_%d: .string %s\n", _const, val); }
-#define GEN_LITERAL(type, val)  { _const++; __GEN_LITERAL_##type(val); }
+#define GEN_CODE(fmt, ...)            { fprintf(output, "\t" fmt "\n", ##__VA_ARGS__); }
+#define GEN_LABEL(name, ...)          { fprintf(output, name ":\n" , ##__VA_ARGS__); }
+#define __GEN_LITERAL_int(val)        { fprintf(output, "\t_CONST_%d: .word %d\n", _const, val); }
+#define __GEN_LITERAL_float(val)      { fprintf(output, "\t_CONST_%d: .float %f\n", _const, val); }
+#define __GEN_LITERAL_str(val)        { fprintf(output, "\t_CONST_%d: .string %s\n", _const, val); }
+#define GEN_LITERAL(type, val)        { _const++; __GEN_LITERAL_##type(val); }
 #define __GEN_GLOBAL_int(name, val)   { fprintf(output, "\t_%s: .word %d\n", name, val); }
 #define __GEN_GLOBAL_float(name, val) { fprintf(output, "\t_%s: .float %f\n", name, val); }
 #define __GEN_GLOBAL_array(name, val) { fprintf(output, "\t_%s: .zero %d\n", name, val); }
-#define GEN_GLOBAL(type, name, val)  { __GEN_GLOBAL_##type(name, val); }
-#define ALIGN(size)             { fprintf(output, "\t.align %d\n", size); }
+#define GEN_GLOBAL(type, name, val)   { __GEN_GLOBAL_##type(name, val); }
+#define ALIGN(size)                   { fprintf(output, "\t.align %d\n", size); }
 #define GEN_OP(type, op, d, n, m) { \
     GEN_CODE("%1$s"#op"  %2$c%3$d, %2$c%4$d, %2$c%5$d", \
         type == INT_TYPE ? "" : "f", \
@@ -39,10 +39,10 @@
 #define ARRAY_PROP(node)  DESC(node)->properties.arrayProperties
 #define IS_SCALAR(node)   (DESC(id)->kind == SCALAR_TYPE_DESCRIPTOR)
 #define IS_LOCAL(node)    (ENTRY(node)->nestingLevel > 0)
-#define NAME(node)        (node)->semantic_value.identifierSemanticValue.identifierName
 #define STMT(node)        (node)->semantic_value.stmtSemanticValue
 #define EXPR(node)        (node)->semantic_value.exprSemanticValue
 #define ID(node)          (node)->semantic_value.identifierSemanticValue
+#define NAME(node)        (ID(node)).identifierName
 #define ENTRY(node)       (node)->semantic_value.identifierSemanticValue.symbolTableEntry
 
 #define FATAL(x) { \
@@ -56,18 +56,17 @@
         ; (name) = (name)->rightSibling)
 
 static enum {None, Text, Data} mode = None;
-#define SWITCH_TO(type) if(mode != type) fprintf(output, "."#type"\n");
+#define SWITCH_TO(type) if(mode != type) { mode = type; fprintf(output, "."#type"\n"); }
 
 static FILE *output;
 static int _AR_offset;
 static int _local_var_offset;
 static int _label_count;
-static int _const; // constant for constants and statments
+static int _const;
 static int regs[32];
 static int FPregs[32];
 
 int __allocReg_int(){
-    // candidates: x9-x15, x19-x29
     for(int i = 9; i <= 29; i++) {
         if(i == 16) i = 19;
         if(!regs[i]) {
@@ -282,7 +281,6 @@ void genStatementList(AST_NODE* node){
 }
 
 void genGlobalDeclration(AST_NODE *decl){
-    /* copy-past from semanticAnalysis.c */
     AST_NODE *type_node = decl->child;
     FOR_SIBLINGS(id, type_node->rightSibling) {
         if(IS_TYPE(id))
@@ -336,7 +334,7 @@ void genExprNode(AST_NODE *node) {
         }
         return ;
     }
-    // unary or binary ?
+
     if(EXPR(node).kind == UNARY_OPERATION) {
         genExprRelatedNode(node->child);
         switch(EXPR(node).op.unaryOp) {
@@ -401,12 +399,12 @@ void genExprNode(AST_NODE *node) {
                     node->place = rhs->place;
             }
         } else {
-            /* lhs & rhs is int, use lhs as destination */
+            /* lhs & rhs are int, use lhs as destination */
             node->dataType = lhs->dataType;
             node->place = lhs->place;
         }
 
-        /* now operands will be both float or int */
+        /* now operands will be both float or int, except AND & OR */
         switch(EXPR(node).op.binaryOp) {
             case BINARY_OP_ADD ... BINARY_OP_DIV:
                 if(EXPR(node).op.binaryOp == BINARY_OP_ADD) {
@@ -548,6 +546,7 @@ void genAssignmentStmt(AST_NODE *node) {
             GEN_CODE("str %c%d, [x%d]",
                 lhs->dataType == INT_TYPE ? 'w' : 's',
                 rhs->place, temp);
+            freeReg(temp, int);
         }
         if(rhs->dataType == INT_TYPE)
             freeReg(rhs->place, int);
@@ -582,6 +581,7 @@ void genFunctionDeclration(AST_NODE *func_decl){
     _local_var_offset = 0;
     FOR_SIBLINGS(list_node, paramListNode->rightSibling->child)
         genGeneralNode(list_node);
+    _AR_offset += _local_var_offset;
 
     genEpilogue(name);
 }
@@ -604,12 +604,13 @@ void genPrologue(char *name){
     GEN_CODE("sub sp, sp, w30");
 
     int offset = 8;
-    // push callee saved registers
+    /* push callee saved registers */
     for(int i = 19; i <= 29; i++, offset += 8)
         GEN_CODE("str x%d, [sp, #%d]", i, offset);
-    // VFP regs
+    /* VFP regs */
     for(int i = 16; i <= 23; i++, offset += 8)
         GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
+    offset -= 8;
 
     _AR_offset = offset;
     GEN_LABEL("_begin_%s", name);
