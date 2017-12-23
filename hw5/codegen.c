@@ -12,9 +12,9 @@
 #define __GEN_LITERAL_float(val)      { fprintf(output, "\t_CONST_%d: .float %f\n", _const, val); }
 #define __GEN_LITERAL_str(val)        { fprintf(output, "\t_CONST_%d: .string %s\n", _const, val); }
 #define GEN_LITERAL(type, val)        { _const++; __GEN_LITERAL_##type(val); }
-#define __GEN_GLOBAL_int(name, val)   { fprintf(output, "\t_%s: .word %d\n", name, val); }
-#define __GEN_GLOBAL_float(name, val) { fprintf(output, "\t_%s: .float %f\n", name, val); }
-#define __GEN_GLOBAL_array(name, val) { fprintf(output, "\t_%s: .zero %d\n", name, val); }
+#define __GEN_GLOBAL_int(name, val)   { fprintf(output, "\t__g_%s: .word %d\n", name, val); }
+#define __GEN_GLOBAL_float(name, val) { fprintf(output, "\t__g_%s: .float %f\n", name, val); }
+#define __GEN_GLOBAL_array(name, val) { fprintf(output, "\t__g_%s: .zero %d\n", name, val); }
 #define GEN_GLOBAL(type, name, val)   { __GEN_GLOBAL_##type(name, val); }
 #define ALIGN(size)                   { fprintf(output, "\t.align %d\n", size); }
 #define GEN_OP(type, op, d, n, m) { \
@@ -43,7 +43,7 @@
 #define EXPR(node)        (node)->semantic_value.exprSemanticValue
 #define ID(node)          (node)->semantic_value.identifierSemanticValue
 #define NAME(node)        (ID(node)).identifierName
-#define ENTRY(node)       (node)->semantic_value.identifierSemanticValue.symbolTableEntry
+#define ENTRY(node)       (ID(node)).symbolTableEntry
 
 #define FATAL(x) { \
     fprintf(stderr, "Fatal : " x "\nAborted.\n"); \
@@ -65,6 +65,16 @@ static int _label_count;
 static int _const;
 static int regs[32];
 static int FPregs[32];
+static DATA_TYPE _return_type;
+
+#define __CALLER_SAVED_int 9, 15
+#define __CALLEE_SAVED_int 19, 29
+#define __CALLER_SAVED_float 8, 15
+#define __CALLEE_SAVED_float 16, 31
+#define __INTERNAL_REGS_RANGE(name, START, END) int name = START; name <= END; ++name
+#define __REGS_RANGE(name, ...) __INTERNAL_REGS_RANGE(name, __VA_ARGS__)
+#define CALLER_SAVED(name, type) __REGS_RANGE(name, __CALLER_SAVED_##type)
+#define CALLEE_SAVED(name, type) __REGS_RANGE(name, __CALLEE_SAVED_##type)
 
 int __allocReg_int(){
     for(int i = 9; i <= 29; i++) {
@@ -124,6 +134,9 @@ void genFunctionDeclration(AST_NODE *node);
 void genVariableRvalue(AST_NODE *node);
 void genConstValueNode(AST_NODE *node);
 void genGeneralNode(AST_NODE *node);
+
+int genSaveCallerRegs();
+void genRestoreCallerRegs(int count);
 
 void genGeneralNode(AST_NODE *node) {
     switch(node->nodeType) {
@@ -226,17 +239,22 @@ void genFunctionCall(AST_NODE *node) {
         /* eval each parameters */
         genExprRelatedNode(relop_expr->child);
         relop_expr->place = relop_expr->child->place;
+        int save_count = genSaveCallerRegs();
         /* pass arguments */
         GEN_CODE("bl _start_%s", func_name);
+        /* restore sp space for args ? */
+        genRestoreCallerRegs(save_count);
         return ;
     } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_READ)) {
         GEN_CODE("bl _read_int");
     } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_FREAD)) {
         GEN_CODE("bl _read_float");
-    } else
+    } else {
+        int save_count = genSaveCallerRegs();
         GEN_CODE("bl _start_%s", func_name);
+        genRestoreCallerRegs(save_count);
+    }
 }
-
 
 void genBlockNode(AST_NODE *node) {
     FOR_SIBLINGS(child, node->child)
@@ -266,7 +284,7 @@ void genStmtNode(AST_NODE *node) {
                 genFunctionCall(node);
                 break;
             case RETURN_STMT:
-                //genReturnStmt(node);
+                genReturnStmt(node);
                 break;
         }
     }
@@ -314,6 +332,22 @@ void genGlobalDeclration(AST_NODE *node) {
             GEN_GLOBAL(array, NAME(id), size);
         }
     }
+}
+
+void genReturnStmt(AST_NODE *node) {
+    if(_return_type == VOID_TYPE)
+        return ;
+
+    AST_NODE *val = node->child;
+    genExprRelatedNode(val);
+    int src = val->place;
+    if(_return_type != node->dataType) {
+        /* conversion */
+    }
+    GEN_CODE("%1$smov %2$c0, %2$c%3$d",
+        _return_type == INT_TYPE ? "" : "f",
+        _return_type == INT_TYPE ? 'w' : 's',
+        src);
 }
 
 void genExprNode(AST_NODE *node) {
@@ -441,7 +475,7 @@ void genExprNode(AST_NODE *node) {
                     freeReg(lhs->place, int);
                 if(rhs->dataType == INT_TYPE)
                     freeReg(rhs->place, int);
-                if(rhs->dataType == FLOAT_TYPE)
+                else
                     freeReg(rhs->place, float);
                 break;
             case BINARY_OP_AND:
@@ -506,7 +540,7 @@ void genVariableRvalue(AST_NODE *node) {
             node->place, ENTRY(node)->offset);
     } else {
         /* TODO: array */
-        GEN_CODE("ldr %c%d, _%s",
+        GEN_CODE("ldr %c%d, __g_%s",
             node->dataType == INT_TYPE ? 'w' : 's',
             node->place, NAME(node));
     }
@@ -651,7 +685,7 @@ void genAssignmentStmt(AST_NODE *node) {
                 ENTRY(lhs)->offset);
         } else {
             int temp = allocReg(int);
-            GEN_CODE("ldr x%d, =_%s", temp, NAME(lhs));
+            GEN_CODE("ldr x%d, =__g_%s", temp, NAME(lhs));
             GEN_CODE("str %c%d, [x%d]",
                 lhs->dataType == INT_TYPE ? 'w' : 's',
                 rhs->place, temp);
@@ -684,6 +718,7 @@ void genProgramNode(AST_NODE *node){
 void genFunctionDeclration(AST_NODE *node) {
     _AR_offset = 0;
     char *name = NAME(node->child->rightSibling);
+    _return_type = node->child->dataType;
     AST_NODE *param_list = node->child->rightSibling->rightSibling;
     genPrologue(name);
 
@@ -714,11 +749,15 @@ void genPrologue(char *name){
 
     int offset = 8;
     /* push callee saved registers */
-    for(int i = 19; i <= 29; i++, offset += 8)
+    for(CALLEE_SAVED(i, int)) {
         GEN_CODE("str x%d, [sp, #%d]", i, offset);
+        offset += 8;
+    }
     /* VFP regs */
-    for(int i = 16; i <= 23; i++, offset += 8)
+    for(CALLEE_SAVED(i, float)) {
         GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
+        offset += 8;
+    }
     offset -= 8;
 
     _AR_offset = offset;
@@ -729,10 +768,14 @@ void genEpilogue(char *name){
     GEN_LABEL("_end_%s", name);
 
     int offset = 8;
-    for(int i = 19; i <= 29; i++, offset += 8)
+    for(CALLEE_SAVED(i, int)) {
         GEN_CODE("ldr x%d, [sp, #%d]", i, offset);
-    for(int i = 16; i <= 23; i++, offset += 8)
+        offset += 8;
+    }
+    for(CALLEE_SAVED(i, float)) {
         GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
+        offset += 8;
+    }
 
     GEN_CODE("ldr x30, [x29, #8]");
     GEN_CODE("add sp, x29, #8");
@@ -741,4 +784,40 @@ void genEpilogue(char *name){
     SWITCH_TO(Data);
     GEN_CODE("_frameSize_%s: .word %d\n", name, _AR_offset);
     SWITCH_TO(Text);
+}
+
+int genSaveCallerRegs() {
+    int count = 0;
+    for(CALLER_SAVED(i, int)) {
+        if(regs[i]) {
+            GEN_CODE("str x%d, [sp, %d]", i, -8 * count);
+            ++count;
+        }
+    }
+    for(CALLER_SAVED(i, float)) {
+        if(regs[i]) {
+            GEN_CODE("str x%d, [sp, %d]", i, -8 * count);
+            ++count;
+        }
+    }
+    if(count)
+        GEN_CODE("sub sp, sp, #%d", 8 * count);
+    return count;
+}
+
+void genRestoreCallerRegs(int save_count) {
+    GEN_CODE("add sp, sp, #%d", 8 * save_count);
+    int count = 0;
+    for(CALLER_SAVED(i, int)) {
+        if(regs[i]) {
+            GEN_CODE("ldr x%d, [sp, %d]", i, -8 * count);
+            ++count;
+        }
+    }
+    for(CALLER_SAVED(i, float)) {
+        if(regs[i]) {
+            GEN_CODE("ldr x%d, [sp, %d]", i, -8 * count);
+            ++count;
+        }
+    }
 }
