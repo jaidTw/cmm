@@ -77,7 +77,7 @@ int __allocReg_int(){
     return -1;
 }
 
-int __allocReg_float(){
+int __allocReg_float() {
     for(int i = 16; i <= 31; i++)
         if(!FPregs[i]) {
             FPregs[i] = 1;
@@ -105,29 +105,28 @@ void genPrologue(char *name);
 void genEpilogue(char *name);
 void genAssignOrExpr(AST_NODE *node);
 void genExprRelatedNode(AST_NODE *node);
-void genExprNode(AST_NODE *expr_node);
-void genFunctionCall(AST_NODE *function_node);
-void genAssignmentStmt(AST_NODE *assign_node);
-void genBlockNode(AST_NODE *block_node);
-void genForStmt(AST_NODE *for_node);
-void genWhileStmt(AST_NODE *while_node);
-void genReturnStmt(AST_NODE *return_node);
-void genIfStmt(AST_NODE *if_node);
-void genStmtNode(AST_NODE *stmt_node);
-void genStatementList(AST_NODE* stmt_list_node);
+void genExprNode(AST_NODE *node);
+void genFunctionCall(AST_NODE *node);
+void genAssignmentStmt(AST_NODE *node);
+void genBlockNode(AST_NODE *node);
+void genForStmt(AST_NODE *node);
+void genWhileStmt(AST_NODE *node);
+void genReturnStmt(AST_NODE *_node);
+void genIfStmt(AST_NODE *node);
+void genStmtNode(AST_NODE *node);
+void genStatementList(AST_NODE* node);
 void genLocalDeclaration(AST_NODE* node);
-void genLocalDeclarations(AST_NODE* decl_list_node);
-void genGlobalDeclration(AST_NODE *decl);
-void genGlobalDeclrations(AST_NODE *decl_list_node);
-void genProgramNode(AST_NODE *program_node);
-void genFunctionDeclration(AST_NODE *func_decl);
-void genVariableRvalue(AST_NODE *id_node);
-void genConstValueNode(AST_NODE *const_node);
+void genLocalDeclarations(AST_NODE* node);
+void genGlobalDeclration(AST_NODE *node);
+void genGlobalDeclrations(AST_NODE *node);
+void genProgramNode(AST_NODE *_node);
+void genFunctionDeclration(AST_NODE *node);
+void genVariableRvalue(AST_NODE *node);
+void genConstValueNode(AST_NODE *node);
 void genGeneralNode(AST_NODE *node);
 
-void genGeneralNode(AST_NODE *node)
-{
-    switch(node->nodeType){
+void genGeneralNode(AST_NODE *node) {
+    switch(node->nodeType) {
         case VARIABLE_DECL_LIST_NODE:
             genLocalDeclarations(node);
             break;
@@ -150,7 +149,7 @@ void genGeneralNode(AST_NODE *node)
 
 void genLocalDeclarations(AST_NODE* node) {
     FOR_SIBLINGS(decl_node, node->child)
-      genLocalDeclaration(decl_node);
+        genLocalDeclaration(decl_node);
 }
 
 void genLocalDeclaration(AST_NODE* node) {
@@ -181,7 +180,7 @@ void genLocalDeclaration(AST_NODE* node) {
 }
 
 void genExprRelatedNode(AST_NODE *node) {
-    switch(node->nodeType){
+    switch(node->nodeType) {
         case EXPR_NODE:
             genExprNode(node);
             break;
@@ -200,12 +199,12 @@ void genExprRelatedNode(AST_NODE *node) {
 }
 
 void genAssignOrExpr(AST_NODE *node) {
-    if(node->nodeType == STMT_NODE){
+    if(node->nodeType == STMT_NODE) {
         if(STMT(node).kind == ASSIGN_STMT)
             genAssignmentStmt(node);
         else if(STMT(node).kind == FUNCTION_CALL_STMT)
             genFunctionCall(node);
-    } else{
+    } else {
         genExprRelatedNode(node);
     }
 }
@@ -239,49 +238,47 @@ void genFunctionCall(AST_NODE *node) {
 }
 
 
-void genBlockNode(AST_NODE *block_node){
-    FOR_SIBLINGS(child, block_node->child)
+void genBlockNode(AST_NODE *node) {
+    FOR_SIBLINGS(child, node->child)
         genGeneralNode(child);
 }
 
-void genStmtNode(AST_NODE *stmt_node){
-    if(stmt_node->nodeType == NUL_NODE){
+void genStmtNode(AST_NODE *node) {
+    if(node->nodeType == NUL_NODE) {
         return;
-    }
-    else if(stmt_node->nodeType == BLOCK_NODE){
-        genBlockNode(stmt_node);
-    }
-    else{
-        switch(STMT(stmt_node).kind){
+    } else if(node->nodeType == BLOCK_NODE) {
+        genBlockNode(node);
+    } else {
+        switch(STMT(node).kind) {
             case WHILE_STMT:
-                //genWhileStmt(stmt_node);
+                //genWhileStmt(node);
                 break;
             case FOR_STMT:
-                //genForStmt(stmt_node);
+                //genForStmt(node);
                 break;
             case ASSIGN_STMT:
-                genAssignmentStmt(stmt_node);
+                genAssignmentStmt(node);
                 break;
             case IF_STMT:
-                //genIfStmt(stmt_node);
+                genIfStmt(node);
                 break;
             case FUNCTION_CALL_STMT:
-                genFunctionCall(stmt_node);
+                genFunctionCall(node);
                 break;
             case RETURN_STMT:
-                //genReturnStmt(stmt_node);
+                //genReturnStmt(node);
                 break;
         }
     }
 }
 
-void genStatementList(AST_NODE* node){
+void genStatementList(AST_NODE* node) {
     FOR_SIBLINGS(stmt, node->child)
         genStmtNode(stmt);
 }
 
-void genGlobalDeclration(AST_NODE *decl){
-    AST_NODE *type_node = decl->child;
+void genGlobalDeclration(AST_NODE *node) {
+    AST_NODE *type_node = node->child;
     FOR_SIBLINGS(id, type_node->rightSibling) {
         if(IS_TYPE(id))
             continue;
@@ -444,7 +441,7 @@ void genExprNode(AST_NODE *node) {
                     freeReg(rhs->place, float);
                 break;
             case BINARY_OP_AND:
-            case BINARY_OP_OR:{
+            case BINARY_OP_OR: {
                 /* eval lhs */
                 GEN_CODE("%scmp %c%d, #0",
                     lhs->dataType == INT_TYPE ? "" : "f",
@@ -492,22 +489,22 @@ void genExprNode(AST_NODE *node) {
     }
 }
 
-void genVariableRvalue(AST_NODE *id_node) {
-    if(id_node->dataType == INT_TYPE)
-        id_node->place = allocReg(int);
+void genVariableRvalue(AST_NODE *node) {
+    if(node->dataType == INT_TYPE)
+        node->place = allocReg(int);
     else
-        id_node->place = allocReg(float);
+        node->place = allocReg(float);
 
-    if(IS_LOCAL(id_node)) {
+    if(IS_LOCAL(node)) {
         /* TODO: array */
         GEN_CODE("ldr %c%d, [x29, #-%d]",
-            id_node->dataType == INT_TYPE ? 'w' : 's',
-            id_node->place, ENTRY(id_node)->offset);
+            node->dataType == INT_TYPE ? 'w' : 's',
+            node->place, ENTRY(node)->offset);
     } else {
         /* TODO: array */
         GEN_CODE("ldr %c%d, _%s",
-            id_node->dataType == INT_TYPE ? 'w' : 's',
-            id_node->place, NAME(id_node));
+            node->dataType == INT_TYPE ? 'w' : 's',
+            node->place, NAME(node));
     }
 }
 
@@ -529,6 +526,9 @@ void genConstValueNode(AST_NODE *node) {
         SWITCH_TO(Text);
         GEN_CODE("ldr x%d, =_CONST_%d", node->place, _const);
     }
+}
+
+void genIfStmt(AST_NODE *node) {
 }
 
 void genAssignmentStmt(AST_NODE *node) {
@@ -557,29 +557,29 @@ void genAssignmentStmt(AST_NODE *node) {
     }
 }
 
-void genGlobalDeclrations(AST_NODE *node){
+void genGlobalDeclrations(AST_NODE *node) {
     SWITCH_TO(Data);
     FOR_SIBLINGS(decl, node->child)
         genGlobalDeclration(decl);
 }
 
-void genProgramNode(AST_NODE *program_node){
-    FOR_SIBLINGS(global_decl_list, program_node->child) {
-        if(global_decl_list->nodeType == VARIABLE_DECL_LIST_NODE) 
+void genProgramNode(AST_NODE *node){
+    FOR_SIBLINGS(global_decl_list, node->child) {
+        if(global_decl_list->nodeType == VARIABLE_DECL_LIST_NODE)
             genGlobalDeclrations(global_decl_list);
         else if(global_decl_list->nodeType == DECLARATION_NODE)
             genFunctionDeclration(global_decl_list);
     }
 }
 
-void genFunctionDeclration(AST_NODE *func_decl){
+void genFunctionDeclration(AST_NODE *node) {
     _AR_offset = 0;
-    char *name = NAME(func_decl->child->rightSibling);
-    AST_NODE *paramListNode = func_decl->child->rightSibling->rightSibling;
+    char *name = NAME(node->child->rightSibling);
+    AST_NODE *param_list = node->child->rightSibling->rightSibling;
     genPrologue(name);
 
     _local_var_offset = 0;
-    FOR_SIBLINGS(list_node, paramListNode->rightSibling->child)
+    FOR_SIBLINGS(list_node, param_list->rightSibling->child)
         genGeneralNode(list_node);
     _AR_offset += _local_var_offset;
 
