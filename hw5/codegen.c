@@ -251,10 +251,10 @@ void genStmtNode(AST_NODE *node) {
     } else {
         switch(STMT(node).kind) {
             case WHILE_STMT:
-                //genWhileStmt(node);
+                genWhileStmt(node);
                 break;
             case FOR_STMT:
-                //genForStmt(node);
+                genForStmt(node);
                 break;
             case ASSIGN_STMT:
                 genAssignmentStmt(node);
@@ -368,12 +368,14 @@ void genExprNode(AST_NODE *node) {
             default: break;
         }
 
+        DATA_TYPE logical_op_type;
         if(lhs->dataType == rhs->dataType && lhs->dataType == FLOAT_TYPE) {
             switch(EXPR(node).op.binaryOp) {
                 /* EQ, GE, LE, NE, GT, LT, AND, OR produce int result
                  * we need an integer register for result
                  * */
                 case BINARY_OP_EQ ... BINARY_OP_OR:
+                    logical_op_type = FLOAT_TYPE;
                     node->dataType = INT_TYPE;
                     node->place = allocReg(int);
                     break;
@@ -384,6 +386,7 @@ void genExprNode(AST_NODE *node) {
             }
         } else if(lhs->dataType != rhs->dataType) {
             node->dataType = FLOAT_TYPE;
+            logical_op_type = FLOAT_TYPE;
             if(EXPR(node).op.binaryOp != BINARY_OP_AND
                && EXPR(node).op.binaryOp != BINARY_OP_OR) {
                 /* TODO: insert type conversion instructions */
@@ -397,6 +400,7 @@ void genExprNode(AST_NODE *node) {
             }
         } else {
             /* lhs & rhs are int, use lhs as destination */
+            logical_op_type = INT_TYPE;
             node->dataType = lhs->dataType;
             node->place = lhs->place;
         }
@@ -422,8 +426,8 @@ void genExprNode(AST_NODE *node) {
                 /* EQ, GE, LE, NE, GT, LT*/
             case BINARY_OP_EQ ... BINARY_OP_LT:
                 GEN_CODE("%1$scmp %2$c%3$d, %2$c%4$d",
-                    node->dataType == INT_TYPE ? "" : "f",
-                    node->dataType == INT_TYPE ? 'w' : 's',
+                    logical_op_type == INT_TYPE ? "" : "f",
+                    logical_op_type == INT_TYPE ? 'w' : 's',
                     lhs->place, rhs->place);
 
                 GEN_CODE("cset w%d, %s", node->place,
@@ -542,6 +546,11 @@ void genIfStmt(AST_NODE *node) {
             cond->dataType == INT_TYPE ? "" : "f",
             cond->dataType == INT_TYPE ? 'w' : 's',
             cond->place);
+        if(cond->dataType == INT_TYPE)
+            freeReg(cond->place, int);
+        else
+            freeReg(cond->place, float);
+
         GEN_CODE("b.eq _L%d", end_label);
         genBlockNode(if_block);
         GEN_LABEL("_L%d", end_label);
@@ -553,6 +562,11 @@ void genIfStmt(AST_NODE *node) {
         cond->dataType == INT_TYPE ? "" : "f",
         cond->dataType == INT_TYPE ? 'w' : 's',
         cond->place);
+    if(cond->dataType == INT_TYPE)
+        freeReg(cond->place, int);
+    else
+        freeReg(cond->place, float);
+
     GEN_CODE("b.eq _L%d", else_label);
     genBlockNode(if_block);
     GEN_CODE("b.eq _L%d", end_label);
@@ -563,6 +577,66 @@ void genIfStmt(AST_NODE *node) {
         genBlockNode(else_block);
     }
     GEN_CODE("b _L%d", end_label);
+    GEN_LABEL("_L%d", end_label);
+}
+
+void genForStmt(AST_NODE *node) {
+    AST_NODE *init = node->child;
+    AST_NODE *cond = init->rightSibling;
+    AST_NODE *loop = cond->rightSibling;
+    AST_NODE *block = loop->rightSibling;
+
+    genGeneralNode(init);
+    int start_label = ++_label_count;
+    int end_label = ++_label_count;
+    GEN_LABEL("_L%d", start_label);
+
+    genGeneralNode(cond);
+    AST_NODE *cond_result = cond->child;
+    while(cond_result->rightSibling) {
+        if(cond_result->dataType == INT_TYPE)
+            freeReg(cond->place, int);
+        else
+            freeReg(cond->place, float);
+        cond_result = cond_result->rightSibling;
+    }
+    GEN_CODE("%scmp %c%d, #0",
+        cond_result->dataType == INT_TYPE ? "" : "f",
+        cond_result->dataType == INT_TYPE ? 'w' : 's',
+        cond_result->place);
+    if(cond_result->dataType == INT_TYPE)
+        freeReg(cond->place, int);
+    else
+        freeReg(cond->place, float);
+    GEN_CODE("b.eq _L%d", end_label);
+
+    genBlockNode(block);
+    genGeneralNode(loop);
+    GEN_CODE("b _L%d", start_label);
+    GEN_LABEL("_L%d", end_label);
+}
+
+void genWhileStmt(AST_NODE *node) {
+    AST_NODE *cond = node->child;
+    AST_NODE *block = cond->rightSibling;
+
+    int start_label = ++_label_count;
+    int end_label = ++_label_count;
+
+    GEN_LABEL("_L%d", start_label);
+    genExprRelatedNode(cond);
+    GEN_CODE("%scmp %c%d, #0",
+        cond->dataType == INT_TYPE ? "" : "f",
+        cond->dataType == INT_TYPE ? 'w' : 's',
+        cond->place);
+    if(cond->dataType == INT_TYPE)
+        freeReg(cond->place, int);
+    else
+        freeReg(cond->place, float);
+    GEN_CODE("b.eq _L%d", end_label);
+
+    genBlockNode(block);
+    GEN_CODE("b _L%d", start_label);
     GEN_LABEL("_L%d", end_label);
 }
 
