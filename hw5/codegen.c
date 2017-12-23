@@ -45,6 +45,14 @@
 #define NAME(node)        (ID(node)).identifierName
 #define ENTRY(node)       (ID(node)).symbolTableEntry
 
+/* Macro for accessing parameter information */
+#define PARAM_DESC(param)         (param)->type
+#define PARAM_IS_SCALAR(param)    (PARAM_DESC(param)->kind == SCALAR_TYPE_DESCRIPTOR)
+#define PARAM_SCALAR_TYPE(param)  PARAM_DESC(param)->properties.dataType
+#define PARAM_ARRAY_TYPE(param)   PARAM_DESC(param)->properties.arrayProperties.elementType
+#define PARAM_DIM(param)          PARAM_DESC(param)->properties.arrayProperties.dimension
+#define PARAM_DIMS(param)         PARAM_DESC(param)->properties.arrayProperties.sizeInEachDimension
+
 #define FATAL(x) { \
     fprintf(stderr, "Fatal : " x "\nAborted.\n"); \
     exit(1); \
@@ -136,7 +144,8 @@ void genConstValueNode(AST_NODE *node);
 void genGeneralNode(AST_NODE *node);
 
 int genSaveCallerRegs();
-void genRestoreCallerRegs(int count);
+void genRestoreCallerRegs();
+int genParameterPassing(Parameter* param, AST_NODE* relop, int start_offset);
 
 void genGeneralNode(AST_NODE *node) {
     switch(node->nodeType) {
@@ -170,12 +179,12 @@ void genLocalDeclaration(AST_NODE* node) {
     FOR_SIBLINGS(id, type_node->rightSibling) {
         SymbolTableEntry *entry = ENTRY(id);
         if(IS_SCALAR(id)) {
-            _local_var_offset += 4;
+            _local_var_offset -= 4;
             entry->offset = _local_var_offset;
             if(ID(id).kind == WITH_INIT_ID) {
                 AST_NODE *relop = id->child;
                 genExprRelatedNode(relop);
-                GEN_CODE("str %c%d, [x29, #-%d]",
+                GEN_CODE("str %c%d, [x29, #%d]",
                     type_node->dataType == INT_TYPE ? 'w' : 's',
                     relop->place, entry->offset);
                 type_node->dataType == INT_TYPE ?
@@ -186,7 +195,7 @@ void genLocalDeclaration(AST_NODE* node) {
             for(int dim = 0 ; dim < ARRAY_PROP(id).dimension; ++dim) {
                 size *= ARRAY_PROP(id).sizeInEachDimension[dim];
             }
-            _local_var_offset += size;
+            _local_var_offset -= size;
             entry->offset = _local_var_offset;
         }
     }
@@ -236,14 +245,21 @@ void genFunctionCall(AST_NODE *node) {
         else
             freeReg(relop_expr->place, int);
     } else if(SIGN(node->child)->parametersCount > 0) {
-        /* eval each parameters */
-        genExprRelatedNode(relop_expr->child);
-        relop_expr->place = relop_expr->child->place;
+        /* eaval params */
+        genGeneralNode(relop_expr);
+
         int save_count = genSaveCallerRegs();
-        /* pass arguments */
+        /* pass args */
+        Parameter *param = SIGN(node->child)->parameterList;
+        int size = genParameterPassing(param, relop_expr, save_count * 8);
+        if(size)
+            GEN_CODE("sub sp, sp, #%d", size);
         GEN_CODE("bl _start_%s", func_name);
-        /* restore sp space for args ? */
-        genRestoreCallerRegs(save_count);
+        /* restore sp space for args and saved regs*/
+        if(size) {
+            GEN_CODE("add sp, sp, #%d", size);
+            genRestoreCallerRegs();
+        }
         return ;
     } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_READ)) {
         GEN_CODE("bl _read_int");
@@ -251,8 +267,13 @@ void genFunctionCall(AST_NODE *node) {
         GEN_CODE("bl _read_float");
     } else {
         int save_count = genSaveCallerRegs();
+        if(save_count)
+            GEN_CODE("sub sp, sp, #%d", 8 * save_count);
         GEN_CODE("bl _start_%s", func_name);
-        genRestoreCallerRegs(save_count);
+        if(save_count) {
+            GEN_CODE("add sp, sp, #%d", 8 * save_count);
+            genRestoreCallerRegs();
+        }
     }
 }
 
@@ -535,9 +556,10 @@ void genVariableRvalue(AST_NODE *node) {
 
     if(IS_LOCAL(node)) {
         /* TODO: array */
-        GEN_CODE("ldr %c%d, [x29, #-%d]",
+        GEN_CODE("ldr %c%d, [x29, #%d]",
             node->dataType == INT_TYPE ? 'w' : 's',
-            node->place, ENTRY(node)->offset);
+            node->place,
+            ENTRY(node)->offset);
     } else {
         /* TODO: array */
         GEN_CODE("ldr %c%d, __g_%s",
@@ -679,7 +701,7 @@ void genAssignmentStmt(AST_NODE *node) {
     genExprRelatedNode(rhs);
     if(lhs->dataType == rhs->dataType) {
         if(IS_LOCAL(lhs)) {
-            GEN_CODE("str %c%d, [x29, #-%d]",
+            GEN_CODE("str %c%d, [x29, #%d]",
                 lhs->dataType == INT_TYPE ? 'w' : 's',
                 rhs->place,
                 ENTRY(lhs)->offset);
@@ -717,14 +739,24 @@ void genProgramNode(AST_NODE *node){
 
 void genFunctionDeclration(AST_NODE *node) {
     _AR_offset = 0;
-    char *name = NAME(node->child->rightSibling);
+    AST_NODE *name_node = node->child->rightSibling;
+    char *name = NAME(name_node);
     _return_type = node->child->dataType;
+
     AST_NODE *param_list = node->child->rightSibling->rightSibling;
+    if(param_list->child) {
+        int offset = 16;
+        FOR_SIBLINGS(param, param_list->child) {
+            AST_NODE *id = param->child->rightSibling;
+            ENTRY(id)->offset = offset;
+            offset += 8;
+        }
+    }
+
     genPrologue(name);
 
     _local_var_offset = 0;
-    FOR_SIBLINGS(list_node, param_list->rightSibling->child)
-        genGeneralNode(list_node);
+    genBlockNode(param_list->rightSibling);
     _AR_offset += _local_var_offset;
 
     genEpilogue(name);
@@ -790,34 +822,56 @@ int genSaveCallerRegs() {
     int count = 0;
     for(CALLER_SAVED(i, int)) {
         if(regs[i]) {
-            GEN_CODE("str x%d, [sp, %d]", i, -8 * count);
+            GEN_CODE("str x%d, [sp, #%d]", i, -8 * count);
             ++count;
         }
     }
     for(CALLER_SAVED(i, float)) {
         if(regs[i]) {
-            GEN_CODE("str x%d, [sp, %d]", i, -8 * count);
+            GEN_CODE("str d%d, [sp, #%d]", i, -8 * count);
             ++count;
         }
     }
-    if(count)
-        GEN_CODE("sub sp, sp, #%d", 8 * count);
     return count;
 }
 
-void genRestoreCallerRegs(int save_count) {
-    GEN_CODE("add sp, sp, #%d", 8 * save_count);
+void genRestoreCallerRegs() {
     int count = 0;
     for(CALLER_SAVED(i, int)) {
         if(regs[i]) {
-            GEN_CODE("ldr x%d, [sp, %d]", i, -8 * count);
+            GEN_CODE("ldr x%d, [sp, #%d]", i, -8 * count);
             ++count;
         }
     }
     for(CALLER_SAVED(i, float)) {
         if(regs[i]) {
-            GEN_CODE("ldr x%d, [sp, %d]", i, -8 * count);
+            GEN_CODE("ldr d%d, [sp, #%d]", i, -8 * count);
             ++count;
         }
     }
+}
+
+int __passPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
+    if(arg == NULL)
+        return -start_offset;
+    int offset = __passPrameter(param->next, arg->rightSibling, start_offset);
+    if(PARAM_IS_SCALAR(param)) {
+        if(PARAM_SCALAR_TYPE(param) != arg->dataType) {
+            /* type conversion */
+        }
+        if(PARAM_SCALAR_TYPE(param) == INT_TYPE) {
+            GEN_CODE("str x%d, [sp, #%d]", arg->place, offset);
+            freeReg(arg->place, int);
+        } else {
+            GEN_CODE("str d%d, [sp, #%d]", arg->place, offset);
+            freeReg(arg->place, float);
+        }
+    } else {
+        /* array */
+    }
+    return offset - 8;
+}
+
+int genParameterPassing(Parameter* param, AST_NODE* relop, int start_offset) {
+    return -__passPrameter(param, relop->child, start_offset);
 }
