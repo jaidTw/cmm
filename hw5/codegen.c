@@ -84,27 +84,75 @@ static DATA_TYPE _return_type;
 #define CALLER_SAVED(name, type) __REGS_RANGE(name, __CALLER_SAVED_##type)
 #define CALLEE_SAVED(name, type) __REGS_RANGE(name, __CALLEE_SAVED_##type)
 
-int __allocReg_int(){
-    for(int i = 9; i <= 29; i++) {
-        if(i == 16) i = 19;
+int __allocReg_int_caller(int fallback);
+int __allocReg_int_callee(int fallback);
+int __allocReg_float_caller(int fallback);
+int __allocReg_float_callee(int fallback);
+
+int __allocReg_int_caller(int fallback){
+    static int qtop = 9;
+    if(qtop > 16)
+        qtop = 9;
+    for(int i = qtop; i <= 16; i++) {
+        if(!regs[i]) {
+            regs[i] = 1;
+            qtop = i;
+            return i;
+        }
+    }
+    if(fallback)
+        return __allocReg_int_callee(0);
+    else
+        return -1;
+}
+
+int __allocReg_int_callee(int fallback){
+    static int qtop = 19;
+    if(qtop > 29)
+        qtop = 19;
+    for(int i = 19; i <= 29; i++) {
         if(!regs[i]) {
             regs[i] = 1;
             return i;
         }
     }
-    return -1;
+    if(fallback)
+        return __allocReg_int_caller(0);
+    else
+        return -1;
 }
 
-int __allocReg_float() {
+int __allocReg_float_caller(int fallback) {
+    static int qtop = 16;
+    if(qtop > 31)
+        qtop = 16;
     for(int i = 16; i <= 31; i++)
         if(!FPregs[i]) {
             FPregs[i] = 1;
             return i;
         }
-    return -1;
+    if(fallback)
+        return __allocReg_int_callee(0);
+    else
+        return -1;
 }
 
-#define allocReg(type) __allocReg_##type()
+int __allocReg_float_callee(int fallback) {
+    static int qtop = 8;
+    if(qtop > 15)
+        qtop = 8;
+    for(int i = 8; i <= 15; i++)
+        if(!FPregs[i]) {
+            FPregs[i] = 1;
+            return i;
+        }
+    if(fallback)
+        return __allocReg_int_caller(0);
+    else
+        return -1;
+}
+
+#define allocReg(type, prefer) __allocReg_##type##_##prefer(1)
 
 static __inline__ void __freeReg_int(int reg) { regs[reg] = 0; }
 static __inline__ void __freeReg_float(int reg) {FPregs[reg] = 0; }
@@ -370,12 +418,12 @@ void genReturnStmt(AST_NODE *node) {
     genExprRelatedNode(val);
     if(_return_type != val->dataType) {
         if(_return_type == INT_TYPE) {
-            int tmp = allocReg(int);
+            int tmp = allocReg(int, callee);
             GEN_CODE("fcvtas w%d, s%d", tmp, val->place);
             freeReg(val->place, float);
             val->place = tmp;
         } else {
-            int tmp = allocReg(float);
+            int tmp = allocReg(float, callee);
             GEN_CODE("scvtf s%d, w%d", tmp, val->place);
             freeReg(val->place, int);
             val->place = tmp;
@@ -395,11 +443,11 @@ void genReturnStmt(AST_NODE *node) {
 void genExprNode(AST_NODE *node) {
     if(EXPR(node).isConstEval) {
         if(node->dataType == INT_TYPE) {
-            node->place = allocReg(int);
+            node->place = allocReg(int, callee);
             GEN_CODE("mov w%d, #%d", node->place, EXPR(node).constEvalValue.iValue);
         }
         else if(node->dataType == FLOAT_TYPE) {
-            node->place = allocReg(float);
+            node->place = allocReg(float, callee);
             SWITCH_TO(Data);
             GEN_LITERAL(float, EXPR(node).constEvalValue.fValue);
             SWITCH_TO(Text);
@@ -424,7 +472,7 @@ void genExprNode(AST_NODE *node) {
                     node->child->dataType == INT_TYPE ? 'w' : 's',
                     node->child->place);
                 if(node->child->dataType == FLOAT_TYPE) {
-                    node->place = allocReg(int);
+                    node->place = allocReg(int, callee);
                     freeReg(node->child->place, float);
                     node->dataType = INT_TYPE;
                 }
@@ -453,7 +501,7 @@ void genExprNode(AST_NODE *node) {
                 case BINARY_OP_EQ ... BINARY_OP_OR:
                     logical_op_type = FLOAT_TYPE;
                     node->dataType = INT_TYPE;
-                    node->place = allocReg(int);
+                    node->place = allocReg(int, callee);
                     break;
                 /* use lhs as result for arithmetic ops */
                 default:
@@ -465,7 +513,7 @@ void genExprNode(AST_NODE *node) {
             logical_op_type = FLOAT_TYPE;
             if(EXPR(node).op.binaryOp != BINARY_OP_AND
                && EXPR(node).op.binaryOp != BINARY_OP_OR) {
-                int tmp = allocReg(float);
+                int tmp = allocReg(float, callee);
                 if(lhs->dataType == INT_TYPE) {
                     GEN_CODE("scvtf s%d, w%d", tmp, lhs->place);
                     freeReg(lhs->place, int);
@@ -582,9 +630,9 @@ void genExprNode(AST_NODE *node) {
 
 void genVariableRvalue(AST_NODE *node) {
     if(node->dataType == INT_TYPE)
-        node->place = allocReg(int);
+        node->place = allocReg(int, callee);
     else
-        node->place = allocReg(float);
+        node->place = allocReg(float, callee);
 
     if(IS_LOCAL(node)) {
         /* TODO: array */
@@ -602,16 +650,16 @@ void genVariableRvalue(AST_NODE *node) {
 
 void genConstValueNode(AST_NODE *node) {
     if(CONST_TYPE(node) == INTEGERC) {
-        node->place = allocReg(int);
+        node->place = allocReg(int, callee);
         GEN_CODE("mov w%d, #%d", node->place, CONST_VAL(node, int));
     } else if(CONST_TYPE(node) == FLOATC) {
-        node->place = allocReg(float);
+        node->place = allocReg(float, callee);
         SWITCH_TO(Data);
         GEN_LITERAL(float, CONST_VAL(node, float));
         SWITCH_TO(Text);
         GEN_CODE("ldr s%d, _CONST_%d", node->place, _const);
     } else {
-        node->place = allocReg(int);
+        node->place = allocReg(int, callee);
         SWITCH_TO(Data);
         GEN_LITERAL(str, CONST_VAL(node, str));
         ALIGN(4);
@@ -733,12 +781,12 @@ void genAssignmentStmt(AST_NODE *node) {
     genExprRelatedNode(rhs);
     if(lhs->dataType != rhs->dataType) {
         if(lhs->dataType == INT_TYPE) {
-            int tmp = allocReg(int);
+            int tmp = allocReg(int, caller);
             GEN_CODE("fcvtas w%d, s%d", tmp, rhs->place);
             freeReg(rhs->place, float);
             rhs->place =tmp;
         } else {
-            int tmp = allocReg(float);
+            int tmp = allocReg(float, caller);
             GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
             freeReg(rhs->place, int);
             rhs->place =tmp;
@@ -751,7 +799,7 @@ void genAssignmentStmt(AST_NODE *node) {
             rhs->place,
             ENTRY(lhs)->offset);
     } else {
-        int temp = allocReg(int);
+        int temp = allocReg(int, caller);
         GEN_CODE("ldr x%d, =__g_%s", temp, NAME(lhs));
         GEN_CODE("str %c%d, [x%d]",
             lhs->dataType == INT_TYPE ? 'w' : 's',
@@ -900,12 +948,12 @@ int __passPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
     if(PARAM_IS_SCALAR(param)) {
         if(PARAM_SCALAR_TYPE(param) != arg->dataType) {
             if(arg->dataType == INT_TYPE) {
-                int tmp = allocReg(float);
+                int tmp = allocReg(float, callee);
                 GEN_CODE("scvtf s%d, w%d", tmp, arg->place);
                 freeReg(arg->place, int);
                 arg->place = tmp;
             } else {
-                int tmp = allocReg(int);
+                int tmp = allocReg(int, callee);
                 GEN_CODE("fcvtas w%d, s%d", tmp, arg->place);
                 freeReg(arg->place, float);
                 arg->place = tmp;
