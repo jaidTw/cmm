@@ -73,6 +73,7 @@ static int _label_count;
 static int _const;
 static int regs[32];
 static int FPregs[32];
+static int _if_has_return;
 static DATA_TYPE _return_type;
 static char *_func_name;
 
@@ -404,6 +405,7 @@ void genGlobalDeclration(AST_NODE *node) {
 }
 
 void genReturnStmt(AST_NODE *node) {
+    _if_has_return = 1;
     if(_return_type == VOID_TYPE)
         return ;
 
@@ -698,16 +700,25 @@ void genIfStmt(AST_NODE *node) {
         freeReg(cond->place, float);
 
     GEN_CODE("b.eq _L%d", else_label);
+    _if_has_return = 0;
     genBlockNode(if_block);
-    GEN_CODE("b _L%d", end_label);
+    /* try to eliminate unconditional branch if block contains return
+     * this checking isn't always working, need more sophiscated reachability analysis
+     */
+    if(!_if_has_return)
+        GEN_CODE("b _L%d", end_label);
+    _if_has_return = 0;
     GEN_LABEL("_L%d", else_label);
     if(else_block->nodeType == STMT_NODE) {
         genIfStmt(else_block);
     } else {
         genBlockNode(else_block);
     }
-    GEN_CODE("b _L%d", end_label);
+    if(!_if_has_return) {
+        GEN_CODE("b _L%d", end_label);
+    }
     GEN_LABEL("_L%d", end_label);
+    _if_has_return = 0;
 }
 
 void genForStmt(AST_NODE *node) {
