@@ -66,16 +66,20 @@
 static enum {None, Text, Data} mode = None;
 #define SWITCH_TO(type) if(mode != type) { mode = type; fprintf(output, "."#type"\n"); }
 
-static FILE *output;
-static int _AR_offset;
-static int _local_var_offset;
-static int _label_count;
-static int _const;
+static FILE *output;            /* output file */
+static int _AR_offset;          /* AR size counter*/
+static int _local_var_offset;   /* local variable size counter */
+static int _label_count;        /* label counter */
+static int _const;              /* constant counter */
+static int _if_has_return;      /* use with optimization for if-else block containing return */
+
+/* cached current function information */
+static DATA_TYPE _return_type;  
+static char *_func_name;
+
+/* for register allocation */
 static int regs[32];
 static int FPregs[32];
-static int _if_has_return;
-static DATA_TYPE _return_type;
-static char *_func_name;
 
 #define __CALLER_SAVED_int 9, 15
 #define __CALLEE_SAVED_int 19, 29
@@ -101,10 +105,7 @@ int __allocReg_int_caller(int fallback){
             return qtop;
         }
     }
-    if(fallback)
-        return __allocReg_int_callee(0);
-    else
-        return -1;
+    return fallback ? __allocReg_int_callee(0) : -1;
 }
 
 int __allocReg_int_callee(int fallback){
@@ -114,10 +115,7 @@ int __allocReg_int_callee(int fallback){
             return qtop;
         }
     }
-    if(fallback)
-        return __allocReg_int_caller(0);
-    else
-        return -1;
+    return fallback ? __allocReg_int_caller(0) : -1;
 }
 
 int __allocReg_float_caller(int fallback) {
@@ -127,10 +125,7 @@ int __allocReg_float_caller(int fallback) {
             return qtop;
         }
     }
-    if(fallback)
-        return __allocReg_int_callee(0);
-    else
-        return -1;
+    return fallback ? __allocReg_int_callee(0) : -1;
 }
 
 int __allocReg_float_callee(int fallback) {
@@ -140,16 +135,13 @@ int __allocReg_float_callee(int fallback) {
             return qtop;
         }
     }
-    if(fallback)
-        return __allocReg_int_caller(0);
-    else
-        return -1;
+    return fallback ? __allocReg_int_caller(0) : -1;
 }
 
 #define allocReg(type, prefer) __allocReg_##type##_##prefer(1)
 
 static __inline__ void __freeReg_int(int reg) { regs[reg] = 0; }
-static __inline__ void __freeReg_float(int reg) {FPregs[reg] = 0; }
+static __inline__ void __freeReg_float(int reg) { FPregs[reg] = 0; }
 #define freeReg(reg, type) __freeReg_##type(reg)
 
 static __inline__ void genWrite(int reg, DATA_TYPE type) {
@@ -229,8 +221,10 @@ void genLocalDeclaration(AST_NODE* node) {
                 GEN_CODE("str %c%d, [x29, #%d]",
                     type_node->dataType == INT_TYPE ? 'w' : 's',
                     relop->place, entry->offset);
-                type_node->dataType == INT_TYPE ?
-                    freeReg(relop->place, int) : freeReg(relop->place, float);
+                if(type_node->dataType == INT_TYPE)
+                    freeReg(relop->place, int);
+                else
+                    freeReg(relop->place, float);
             }
         } else {
             int size = 4;
@@ -289,7 +283,7 @@ void genFunctionCall(AST_NODE *node) {
     } else if(SIGN(node->child)->parametersCount > 0) {
         /* eval params */
         genGeneralNode(relop_expr);
-        /* pre-free the regs holding arguments so they won't be save at genSaveCallerRegs()*/
+        /* pre-free the regs holding arguments so they won't be saved in genSaveCallerRegs() */
         FOR_SIBLINGS(param, relop_expr->child) {
             if(param->dataType == INT_TYPE)
                 freeReg(param->place, int);
@@ -301,14 +295,12 @@ void genFunctionCall(AST_NODE *node) {
         /* pass args */
         Parameter *param = SIGN(node->child)->parameterList;
         int size = genParameterPassing(param, relop_expr, save_count * 8);
-        if(size)
-            GEN_CODE("sub sp, sp, #%d", size);
+        GEN_CODE("sub sp, sp, #%d", size);
         GEN_CODE("bl _start_%s", func_name);
         /* restore sp space for args and saved regs*/
-        if(size) {
-            GEN_CODE("add sp, sp, #%d", size);
+        GEN_CODE("add sp, sp, #%d", size);
+        if(save_count)
             genRestoreCallerRegs();
-        }
         return ;
     } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_READ)) {
         GEN_CODE("bl _read_int");
@@ -423,12 +415,12 @@ void genReturnStmt(AST_NODE *node) {
             freeReg(val->place, int);
             val->place = tmp;
         }
-    } else {
-        if(_return_type == INT_TYPE)
-            freeReg(val->place, int);
-        else
-            freeReg(val->place, float);
     }
+    if(_return_type == INT_TYPE)
+        freeReg(val->place, int);
+    else
+        freeReg(val->place, float);
+
     GEN_CODE("%1$smov %2$c0, %2$c%3$d",
         _return_type == INT_TYPE ? "" : "f",
         _return_type == INT_TYPE ? 'w' : 's',
@@ -489,6 +481,29 @@ void genExprNode(AST_NODE *node) {
         }
 
         DATA_TYPE logical_op_type;
+        if(lhs->dataType != rhs->dataType) {
+            if(EXPR(node).op.binaryOp != BINARY_OP_AND
+               && EXPR(node).op.binaryOp != BINARY_OP_OR) {
+                int tmp = allocReg(float, callee);
+                if(lhs->dataType == INT_TYPE) {
+                    GEN_CODE("scvtf s%d, w%d", tmp, lhs->place);
+                    freeReg(lhs->place, int);
+                    lhs->place = tmp;
+                    lhs->dataType = FLOAT_TYPE;
+                } else {
+                    GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
+                    freeReg(rhs->place, int);
+                    rhs->place = tmp;
+                    rhs->dataType = FLOAT_TYPE;
+                }
+            } else {
+                /* reuse reg of int side */
+                if(lhs->dataType == INT_TYPE)
+                    node->place = lhs->place;
+                else
+                    node->place = rhs->place;
+            }
+        }
         if(lhs->dataType == rhs->dataType && lhs->dataType == FLOAT_TYPE) {
             switch(EXPR(node).op.binaryOp) {
                 /* EQ, GE, LE, NE, GT, LT, AND, OR produce int result
@@ -502,34 +517,10 @@ void genExprNode(AST_NODE *node) {
                 /* use lhs as result for arithmetic ops */
                 default:
                     node->place = lhs->place;
+                    node->dataType = FLOAT_TYPE;
                     break;
             }
-        } else if(lhs->dataType != rhs->dataType) {
-            node->dataType = FLOAT_TYPE;
-            logical_op_type = FLOAT_TYPE;
-            if(EXPR(node).op.binaryOp != BINARY_OP_AND
-               && EXPR(node).op.binaryOp != BINARY_OP_OR) {
-                int tmp = allocReg(float, callee);
-                if(lhs->dataType == INT_TYPE) {
-                    GEN_CODE("scvtf s%d, w%d", tmp, lhs->place);
-                    freeReg(lhs->place, int);
-                    lhs->place = tmp;
-                    lhs->dataType = FLOAT_TYPE;
-                } else {
-                    GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
-                    freeReg(rhs->place, int);
-                    rhs->place = tmp;
-                    lhs->dataType = FLOAT_TYPE;
-                }
-                node->place = lhs->place;
-            } else {
-                /* reuse reg of int side */
-                if(lhs->dataType == INT_TYPE)
-                    node->place = lhs->place;
-                else
-                    node->place = rhs->place;
-            }
-        } else {
+        } else if(lhs->dataType == rhs->dataType){
             /* lhs & rhs are int, use lhs as destination */
             logical_op_type = INT_TYPE;
             node->dataType = lhs->dataType;
@@ -569,7 +560,7 @@ void genExprNode(AST_NODE *node) {
                     EXPR(node).op.binaryOp == BINARY_OP_GT ? "gt" : "lt");
 
                 if(lhs->dataType == FLOAT_TYPE)
-                    freeReg(lhs->place, int);
+                    freeReg(lhs->place, float);
                 if(rhs->dataType == INT_TYPE)
                     freeReg(rhs->place, int);
                 else
@@ -605,19 +596,14 @@ void genExprNode(AST_NODE *node) {
                 GEN_CODE("mov w%d, %d", node->place,
                     EXPR(node).op.binaryOp == BINARY_OP_AND ? 0 : 1);
                 GEN_LABEL("_L%d", end_label);
-                if(lhs->dataType == rhs->dataType) {
-                    if(lhs->dataType == INT_TYPE) {
-                        freeReg(rhs->place, int);
-                    } else {
-                        freeReg(lhs->place, float);
-                        freeReg(rhs->place, float);
-                    }
-                } else {
-                    if(lhs->dataType == INT_TYPE)
-                        freeReg(rhs->place, float);
-                    else
-                        freeReg(lhs->place, float);
-                }
+                if(lhs->dataType == FLOAT_TYPE)
+                    freeReg(lhs->place, float);
+                else if(lhs->place != node->place)
+                    freeReg(lhs->place, int);
+                if(rhs->dataType == FLOAT_TYPE)
+                    freeReg(rhs->place, float);
+                else if(rhs->place != node->place)
+                    freeReg(rhs->place, int);
                 break;
             }
         }
@@ -734,7 +720,7 @@ void genForStmt(AST_NODE *node) {
 
     genGeneralNode(cond);
     AST_NODE *cond_result = cond->child;
-    while(cond_result->rightSibling) {
+    while(cond_result) {
         if(cond_result->dataType == INT_TYPE)
             freeReg(cond->place, int);
         else
@@ -745,10 +731,6 @@ void genForStmt(AST_NODE *node) {
         cond_result->dataType == INT_TYPE ? "" : "f",
         cond_result->dataType == INT_TYPE ? 'w' : 's',
         cond_result->place);
-    if(cond_result->dataType == INT_TYPE)
-        freeReg(cond->place, int);
-    else
-        freeReg(cond->place, float);
     GEN_CODE("b.eq _L%d", end_label);
 
     genBlockNode(block);
@@ -766,14 +748,14 @@ void genWhileStmt(AST_NODE *node) {
 
     GEN_LABEL("_L%d", start_label);
     genExprRelatedNode(cond);
-    GEN_CODE("%scmp %c%d, #0",
-        cond->dataType == INT_TYPE ? "" : "f",
-        cond->dataType == INT_TYPE ? 'w' : 's',
-        cond->place);
     if(cond->dataType == INT_TYPE)
         freeReg(cond->place, int);
     else
         freeReg(cond->place, float);
+    GEN_CODE("%scmp %c%d, #0",
+        cond->dataType == INT_TYPE ? "" : "f",
+        cond->dataType == INT_TYPE ? 'w' : 's',
+        cond->place);
     GEN_CODE("b.eq _L%d", end_label);
 
     genBlockNode(block);
@@ -847,7 +829,6 @@ void genFunctionDeclration(AST_NODE *node) {
             offset += 8;
         }
     }
-
     genPrologue();
 
     _local_var_offset = 0;
@@ -875,12 +856,10 @@ void genPrologue(){
     GEN_CODE("sub sp, sp, w30");
 
     int offset = 8;
-    /* push callee saved registers */
     for(CALLEE_SAVED(i, int)) {
         GEN_CODE("str x%d, [sp, #%d]", i, offset);
         offset += 8;
     }
-    /* VFP regs */
     for(CALLEE_SAVED(i, float)) {
         GEN_CODE("str s%d, [sp, #%d]", i, offset);
         offset += 8;
