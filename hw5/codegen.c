@@ -727,11 +727,14 @@ void genForStmt(AST_NODE *node) {
             freeReg(cond->place, float);
         cond_result = cond_result->rightSibling;
     }
-    GEN_CODE("%scmp %c%d, #0",
-        cond_result->dataType == INT_TYPE ? "" : "f",
-        cond_result->dataType == INT_TYPE ? 'w' : 's',
-        cond_result->place);
-    GEN_CODE("b.eq _L%d", end_label);
+    /* cond-expr may be empty */
+    if(cond_result) {
+        GEN_CODE("%scmp %c%d, #0",
+            cond_result->dataType == INT_TYPE ? "" : "f",
+            cond_result->dataType == INT_TYPE ? 'w' : 's',
+            cond_result->place);
+        GEN_CODE("b.eq _L%d", end_label);
+    }
 
     genBlockNode(block);
     genGeneralNode(loop);
@@ -771,12 +774,12 @@ void genAssignmentStmt(AST_NODE *node) {
             int tmp = allocReg(int, caller);
             GEN_CODE("fcvtas w%d, s%d", tmp, rhs->place);
             freeReg(rhs->place, float);
-            rhs->place =tmp;
+            rhs->place = tmp;
         } else {
             int tmp = allocReg(float, caller);
             GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
             freeReg(rhs->place, int);
-            rhs->place =tmp;
+            rhs->place = tmp;
         }
         rhs->dataType = lhs->dataType;
     }
