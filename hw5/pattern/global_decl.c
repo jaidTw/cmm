@@ -14,5 +14,5 @@ FLOAT g8[2];
 INTA g9;
 FLOATA g10;
 
-int main() {
+int MAIN() {
 }
