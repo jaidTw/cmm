@@ -74,15 +74,19 @@ static int _const;
 static int regs[32];
 static int FPregs[32];
 static DATA_TYPE _return_type;
+static char *_func_name;
 
 #define __CALLER_SAVED_int 9, 15
 #define __CALLEE_SAVED_int 19, 29
-#define __CALLER_SAVED_float 8, 15
-#define __CALLEE_SAVED_float 16, 31
+#define __CALLER_SAVED_float 16, 31
+#define __CALLEE_SAVED_float 8, 15
 #define __INTERNAL_REGS_RANGE(name, START, END) int name = START; name <= END; ++name
 #define __REGS_RANGE(name, ...) __INTERNAL_REGS_RANGE(name, __VA_ARGS__)
 #define CALLER_SAVED(name, type) __REGS_RANGE(name, __CALLER_SAVED_##type)
 #define CALLEE_SAVED(name, type) __REGS_RANGE(name, __CALLEE_SAVED_##type)
+#define __INTERNAL_WALK_REG_Q(name, START, END) static int name = START; if(name > END) name = START; for(;name <= END; ++name)
+#define __WALK_REG_Q(name, ...) __INTERNAL_WALK_REG_Q(name, __VA_ARGS__)
+#define WALK_REG_Q(name, conv, type) __WALK_REG_Q(name, __##conv##_SAVED_##type)
 
 int __allocReg_int_caller(int fallback);
 int __allocReg_int_callee(int fallback);
@@ -90,14 +94,10 @@ int __allocReg_float_caller(int fallback);
 int __allocReg_float_callee(int fallback);
 
 int __allocReg_int_caller(int fallback){
-    static int qtop = 9;
-    if(qtop > 16)
-        qtop = 9;
-    for(int i = qtop; i <= 16; i++) {
-        if(!regs[i]) {
-            regs[i] = 1;
-            qtop = i;
-            return i;
+    WALK_REG_Q(qtop, CALLER, int) {
+        if(!regs[qtop]) {
+            regs[qtop] = 1;
+            return qtop;
         }
     }
     if(fallback)
@@ -107,13 +107,10 @@ int __allocReg_int_caller(int fallback){
 }
 
 int __allocReg_int_callee(int fallback){
-    static int qtop = 19;
-    if(qtop > 29)
-        qtop = 19;
-    for(int i = 19; i <= 29; i++) {
-        if(!regs[i]) {
-            regs[i] = 1;
-            return i;
+    WALK_REG_Q(qtop, CALLEE, int) {
+        if(!regs[qtop]) {
+            regs[qtop] = 1;
+            return qtop;
         }
     }
     if(fallback)
@@ -123,14 +120,12 @@ int __allocReg_int_callee(int fallback){
 }
 
 int __allocReg_float_caller(int fallback) {
-    static int qtop = 16;
-    if(qtop > 31)
-        qtop = 16;
-    for(int i = 16; i <= 31; i++)
-        if(!FPregs[i]) {
-            FPregs[i] = 1;
-            return i;
+    WALK_REG_Q(qtop, CALLER, float) {
+        if(!FPregs[qtop]) {
+            FPregs[qtop] = 1;
+            return qtop;
         }
+    }
     if(fallback)
         return __allocReg_int_callee(0);
     else
@@ -138,14 +133,12 @@ int __allocReg_float_caller(int fallback) {
 }
 
 int __allocReg_float_callee(int fallback) {
-    static int qtop = 8;
-    if(qtop > 15)
-        qtop = 8;
-    for(int i = 8; i <= 15; i++)
-        if(!FPregs[i]) {
-            FPregs[i] = 1;
-            return i;
+    WALK_REG_Q(qtop, CALLEE, float) {
+        if(!FPregs[qtop]) {
+            FPregs[qtop] = 1;
+            return qtop;
         }
+    }
     if(fallback)
         return __allocReg_int_caller(0);
     else
@@ -167,8 +160,6 @@ static __inline__ void genWrite(int reg, DATA_TYPE type) {
         type == INT_TYPE ? "int" : type == FLOAT_TYPE ? "float" : "str");
 }
 
-void genPrologue(char *name);
-void genEpilogue(char *name);
 void genAssignOrExpr(AST_NODE *node);
 void genExprRelatedNode(AST_NODE *node);
 void genExprNode(AST_NODE *node);
@@ -190,6 +181,8 @@ void genFunctionDeclration(AST_NODE *node);
 void genVariableRvalue(AST_NODE *node);
 void genConstValueNode(AST_NODE *node);
 void genGeneralNode(AST_NODE *node);
+void genPrologue();
+void genEpilogue();
 
 int genSaveCallerRegs();
 void genRestoreCallerRegs();
@@ -438,6 +431,7 @@ void genReturnStmt(AST_NODE *node) {
         _return_type == INT_TYPE ? "" : "f",
         _return_type == INT_TYPE ? 'w' : 's',
         val->place);
+    GEN_CODE("b _end_%s", _func_name);
 }
 
 void genExprNode(AST_NODE *node) {
@@ -705,7 +699,7 @@ void genIfStmt(AST_NODE *node) {
 
     GEN_CODE("b.eq _L%d", else_label);
     genBlockNode(if_block);
-    GEN_CODE("b.eq _L%d", end_label);
+    GEN_CODE("b _L%d", end_label);
     GEN_LABEL("_L%d", else_label);
     if(else_block->nodeType == STMT_NODE) {
         genIfStmt(else_block);
@@ -830,7 +824,7 @@ void genProgramNode(AST_NODE *node){
 void genFunctionDeclration(AST_NODE *node) {
     _AR_offset = 0;
     AST_NODE *name_node = node->child->rightSibling;
-    char *name = NAME(name_node);
+    _func_name = NAME(name_node);
     _return_type = node->child->dataType;
 
     AST_NODE *param_list = node->child->rightSibling->rightSibling;
@@ -843,13 +837,13 @@ void genFunctionDeclration(AST_NODE *node) {
         }
     }
 
-    genPrologue(name);
+    genPrologue();
 
     _local_var_offset = 0;
     genBlockNode(param_list->rightSibling);
     _AR_offset += _local_var_offset;
 
-    genEpilogue(name);
+    genEpilogue();
 }
 
 void codeGeneration(AST_NODE *root) {
@@ -858,14 +852,14 @@ void codeGeneration(AST_NODE *root) {
     fclose(output);
 }
 
-void genPrologue(char *name){
+void genPrologue(){
     SWITCH_TO(Text);
-    GEN_LABEL("_start_%s", name);
+    GEN_LABEL("_start_%s", _func_name);
     GEN_CODE("str x30, [sp, #0]");
     GEN_CODE("str x29, [sp, #-8]");
     GEN_CODE("add x29, sp, #-8");
     GEN_CODE("add sp, sp, #-16");
-    GEN_CODE("ldr x30, =_frameSize_%s", name);
+    GEN_CODE("ldr x30, =_frameSize_%s", _func_name);
     GEN_CODE("ldr w30, [x30, #0]");
     GEN_CODE("sub sp, sp, w30");
 
@@ -877,17 +871,17 @@ void genPrologue(char *name){
     }
     /* VFP regs */
     for(CALLEE_SAVED(i, float)) {
-        GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
+        GEN_CODE("str s%d, [sp, #%d]", i, offset);
         offset += 8;
     }
     offset -= 8;
 
     _AR_offset = offset;
-    GEN_LABEL("_begin_%s", name);
+    GEN_LABEL("_begin_%s", _func_name);
 }
 
-void genEpilogue(char *name){
-    GEN_LABEL("_end_%s", name);
+void genEpilogue(){
+    GEN_LABEL("_end_%s", _func_name);
 
     int offset = 8;
     for(CALLEE_SAVED(i, int)) {
@@ -904,7 +898,7 @@ void genEpilogue(char *name){
     GEN_CODE("ldr x29, [x29, #0]");
     GEN_CODE("ret x30");
     SWITCH_TO(Data);
-    GEN_CODE("_frameSize_%s: .word %d\n", name, _AR_offset);
+    GEN_CODE("_frameSize_%s: .word %d\n", _func_name, _AR_offset);
     SWITCH_TO(Text);
 }
 
