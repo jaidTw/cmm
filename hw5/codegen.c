@@ -7,7 +7,7 @@
 
 /* code generation macros */
 #define GEN_CODE(fmt, ...)            { fprintf(output, "\t" fmt "\n", ##__VA_ARGS__); }
-#define GEN_LABEL(name, ...)          { fprintf(output, name ":\n" , ##__VA_ARGS__); }
+#define GEN_LABLE(name, ...)          { fprintf(output, name ":\n" , ##__VA_ARGS__); }
 #define __GEN_LITERAL_int(val)        { fprintf(output, "\t_CONST_%d: .word %d\n", _const, val); }
 #define __GEN_LITERAL_float(val)      { fprintf(output, "\t_CONST_%d: .float %f\n", _const, val); }
 #define __GEN_LITERAL_str(val)        { fprintf(output, "\t_CONST_%d: .string %s\n", _const, val); }
@@ -61,7 +61,7 @@ static enum {None, Text, Data} mode = None;
 static FILE *output;
 static int _AR_offset;
 static int _local_var_offset;
-static int _label_count;
+static int _lable_count;
 static int _const;
 static int regs[32];
 static int FPregs[32];
@@ -447,11 +447,11 @@ void genExprNode(AST_NODE *node) {
                     lhs->dataType == INT_TYPE ? "" : "f",
                     lhs->dataType == INT_TYPE ? 'w' : 's',
                     lhs->place);
-                int short_circuit_label = ++_label_count;
-                int end_label = ++_label_count;
+                int short_circuit_lable = ++_lable_count;
+                int end_lable = ++_lable_count;
                 GEN_CODE("b.%s _L%d",
                     EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
-                    short_circuit_label);
+                    short_circuit_lable);
 
                 /* eval rhs */
                 genExprRelatedNode(rhs);
@@ -462,14 +462,14 @@ void genExprNode(AST_NODE *node) {
 
                 GEN_CODE("b.%s _L%d",
                     EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
-                    short_circuit_label);
+                    short_circuit_lable);
                 GEN_CODE("mov w%d, %d", node->place,
                     EXPR(node).op.binaryOp == BINARY_OP_AND ? 1 : 0);
-                GEN_CODE("b _L%d", end_label);
-                GEN_LABEL("_L%d", short_circuit_label);
+                GEN_CODE("b _L%d", end_lable);
+                GEN_LABLE("_L%d", short_circuit_lable);
                 GEN_CODE("mov w%d, %d", node->place,
                     EXPR(node).op.binaryOp == BINARY_OP_AND ? 0 : 1);
-                GEN_LABEL("_L%d", end_label);
+                GEN_LABLE("_L%d", end_lable);
                 if(lhs->dataType == rhs->dataType) {
                     if(lhs->dataType == INT_TYPE) {
                         freeReg(rhs->place, int);
@@ -529,6 +529,41 @@ void genConstValueNode(AST_NODE *node) {
 }
 
 void genIfStmt(AST_NODE *node) {
+    AST_NODE *cond = node->child;
+    AST_NODE *if_block = cond->rightSibling;
+    AST_NODE *else_block = if_block->rightSibling;
+
+    genExprRelatedNode(cond);
+    int end_lable, else_lable;
+    if(!else_block) {
+        /* no else block */
+        end_lable = ++_lable_count;
+        GEN_CODE("%scmp %c%d, #0",
+            cond->dataType == INT_TYPE ? "" : "f",
+            cond->dataType == INT_TYPE ? 'w' : 's',
+            cond->place);
+        GEN_CODE("b.eq _L%d", end_lable);
+        genBlockNode(if_block);
+        GEN_LABLE("_L%d", end_lable);
+        return ;
+    }
+    else_lable = ++_lable_count;
+    end_lable = ++_lable_count;
+    GEN_CODE("%scmp %c%d, #0",
+        cond->dataType == INT_TYPE ? "" : "f",
+        cond->dataType == INT_TYPE ? 'w' : 's',
+        cond->place);
+    GEN_CODE("b.eq _L%d", else_lable);
+    genBlockNode(if_block);
+    GEN_CODE("b.eq _L%d", end_lable);
+    GEN_LABLE("_L%d", else_lable);
+    if(else_block->nodeType == STMT_NODE) {
+        genIfStmt(else_block);
+    } else {
+        genBlockNode(else_block);
+    }
+    GEN_CODE("b _L%d", end_lable);
+    GEN_LABLE("_L%d", end_lable);
 }
 
 void genAssignmentStmt(AST_NODE *node) {
@@ -594,7 +629,7 @@ void codeGeneration(AST_NODE *root) {
 
 void genPrologue(char *name){
     SWITCH_TO(Text);
-    GEN_LABEL("_start_%s", name);
+    GEN_LABLE("_start_%s", name);
     GEN_CODE("str x30, [sp, #0]");
     GEN_CODE("str x29, [sp, #-8]");
     GEN_CODE("add x29, sp, #-8");
@@ -613,11 +648,11 @@ void genPrologue(char *name){
     offset -= 8;
 
     _AR_offset = offset;
-    GEN_LABEL("_begin_%s", name);
+    GEN_LABLE("_begin_%s", name);
 }
 
 void genEpilogue(char *name){
-    GEN_LABEL("_end_%s", name);
+    GEN_LABLE("_end_%s", name);
 
     int offset = 8;
     for(int i = 19; i <= 29; i++, offset += 8)
