@@ -154,6 +154,23 @@ static __inline__ void genWrite(int reg, DATA_TYPE type) {
         type == INT_TYPE ? "int" : type == FLOAT_TYPE ? "float" : "str");
 }
 
+#define GEN_FCVTAS(node, conv) { \
+    int tmp = allocReg(int, conv); \
+    GEN_CODE("fcvtas w%d, s%d", tmp, node->place); \
+    freeReg(node->place, float); \
+    node->place = tmp; \
+    node->dataType = INT_TYPE; \
+}
+
+#define GEN_SCVTF(node, conv) { \
+    int tmp = allocReg(float, conv); \
+    GEN_CODE("scvtf s%d, w%d", tmp, node->place); \
+    freeReg(node->place, int); \
+    node->place = tmp; \
+    node->dataType = FLOAT_TYPE; \
+}
+
+
 void genAssignOrExpr(AST_NODE *node);
 void genExprRelatedNode(AST_NODE *node);
 void genExprNode(AST_NODE *node);
@@ -406,15 +423,9 @@ void genReturnStmt(AST_NODE *node) {
     genExprRelatedNode(val);
     if(_return_type != val->dataType) {
         if(_return_type == INT_TYPE) {
-            int tmp = allocReg(int, callee);
-            GEN_CODE("fcvtas w%d, s%d", tmp, val->place);
-            freeReg(val->place, float);
-            val->place = tmp;
+            GEN_FCVTAS(val, callee);
         } else {
-            int tmp = allocReg(float, callee);
-            GEN_CODE("scvtf s%d, w%d", tmp, val->place);
-            freeReg(val->place, int);
-            val->place = tmp;
+            GEN_SCVTF(val, callee);
         }
     }
     if(_return_type == INT_TYPE)
@@ -447,9 +458,9 @@ void genExprNode(AST_NODE *node) {
 
     if(EXPR(node).kind == UNARY_OPERATION) {
         genExprRelatedNode(node->child);
+        node->place = node->child->place;
         switch(EXPR(node).op.unaryOp) {
             case UNARY_OP_NEGATIVE:
-                node->place = node->child->place;
                 GEN_CODE("%1$sneg %2$c%3$d, %2$c%3$d",
                     node->dataType == INT_TYPE ? "" : "f",
                     node->dataType == INT_TYPE ? 'w' : 's',
@@ -485,17 +496,10 @@ void genExprNode(AST_NODE *node) {
         if(lhs->dataType != rhs->dataType) {
             if(EXPR(node).op.binaryOp != BINARY_OP_AND
                && EXPR(node).op.binaryOp != BINARY_OP_OR) {
-                int tmp = allocReg(float, callee);
                 if(lhs->dataType == INT_TYPE) {
-                    GEN_CODE("scvtf s%d, w%d", tmp, lhs->place);
-                    freeReg(lhs->place, int);
-                    lhs->place = tmp;
-                    lhs->dataType = FLOAT_TYPE;
+                    GEN_SCVTF(lhs, callee);
                 } else {
-                    GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
-                    freeReg(rhs->place, int);
-                    rhs->place = tmp;
-                    rhs->dataType = FLOAT_TYPE;
+                    GEN_SCVTF(rhs, callee);
                 }
             } else {
                 /* reuse reg of int side */
@@ -806,17 +810,10 @@ void genAssignmentStmt(AST_NODE *node) {
     genExprRelatedNode(rhs);
     if(lhs->dataType != rhs->dataType) {
         if(lhs->dataType == INT_TYPE) {
-            int tmp = allocReg(int, caller);
-            GEN_CODE("fcvtas w%d, s%d", tmp, rhs->place);
-            freeReg(rhs->place, float);
-            rhs->place = tmp;
+            GEN_FCVTAS(rhs, caller);
         } else {
-            int tmp = allocReg(float, caller);
-            GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
-            freeReg(rhs->place, int);
-            rhs->place = tmp;
+            GEN_SCVTF(rhs, caller);
         }
-        rhs->dataType = lhs->dataType;
     }
     if(IS_LOCAL(lhs)) {
         GEN_CODE("str %c%d, [x29, #%d]",
@@ -970,15 +967,9 @@ int __passPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
     if(PARAM_IS_SCALAR(param)) {
         if(PARAM_SCALAR_TYPE(param) != arg->dataType) {
             if(arg->dataType == INT_TYPE) {
-                int tmp = allocReg(float, callee);
-                GEN_CODE("scvtf s%d, w%d", tmp, arg->place);
-                freeReg(arg->place, int);
-                arg->place = tmp;
+                GEN_SCVTF(arg, callee);
             } else {
-                int tmp = allocReg(int, callee);
-                GEN_CODE("fcvtas w%d, s%d", tmp, arg->place);
-                freeReg(arg->place, float);
-                arg->place = tmp;
+                GEN_FCVTAS(arg, callee);
             }
         }
         if(PARAM_SCALAR_TYPE(param) == INT_TYPE) {
