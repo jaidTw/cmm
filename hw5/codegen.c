@@ -44,6 +44,8 @@
 #define ID(node)          (node)->semantic_value.identifierSemanticValue
 #define NAME(node)        (ID(node)).identifierName
 #define ENTRY(node)       (ID(node)).symbolTableEntry
+#define IS_NORMAL(node)   ((ID(node)).kind == NORMAL_ID)
+#define IS_ARRAY(node)    ((ID(node)).kind == ARRAY_ID)
 
 /* Macro for accessing parameter information */
 #define PARAM_DESC(param)         (param)->type
@@ -493,7 +495,7 @@ void genExprNode(AST_NODE *node) {
                     EXPR(node).op.binaryOp == BINARY_OP_GT ? "gt" : "lt");
 
                 if(lhs->dataType == FLOAT_TYPE)
-                    freeReg(lhs->place, int);
+                    freeReg(lhs->place, float);
                 if(rhs->dataType == INT_TYPE)
                     freeReg(rhs->place, int);
                 else
@@ -553,18 +555,28 @@ void genVariableRvalue(AST_NODE *node) {
         node->place = allocReg(int);
     else
         node->place = allocReg(float);
+    if(IS_NORMAL(node)){
+        if(IS_LOCAL(node)) {
+            /* TODO: array */
+            GEN_CODE("ldr %c%d, [x29, #%d]",
+                node->dataType == INT_TYPE ? 'w' : 's',
+                node->place,
+                ENTRY(node)->offset);
+        } else {
+            /* TODO: array */
+            GEN_CODE("ldr %c%d, __g_%s",
+                node->dataType == INT_TYPE ? 'w' : 's',
+                node->place, NAME(node));
+        }
+    }
+    else if(IS_ARRAY(node)){
+        FOR_SIBLINGS(traverseDimList, node->child){
+            genExprRelatedNode(traverseDimList);
+        }
 
-    if(IS_LOCAL(node)) {
-        /* TODO: array */
-        GEN_CODE("ldr %c%d, [x29, #%d]",
-            node->dataType == INT_TYPE ? 'w' : 's',
-            node->place,
-            ENTRY(node)->offset);
-    } else {
-        /* TODO: array */
-        GEN_CODE("ldr %c%d, __g_%s",
-            node->dataType == INT_TYPE ? 'w' : 's',
-            node->place, NAME(node));
+        if(IS_LOCAL(node)){
+
+        }
     }
 }
 
