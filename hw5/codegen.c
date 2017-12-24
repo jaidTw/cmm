@@ -495,17 +495,10 @@ void genExprNode(AST_NODE *node) {
         if(lhs->dataType != rhs->dataType) {
             if(EXPR(node).op.binaryOp != BINARY_OP_AND
                && EXPR(node).op.binaryOp != BINARY_OP_OR) {
-                int tmp = allocReg(float, callee);
                 if(lhs->dataType == INT_TYPE) {
-                    GEN_CODE("scvtf s%d, w%d", tmp, lhs->place);
-                    freeReg(lhs->place, int);
-                    lhs->place = tmp;
-                    lhs->dataType = FLOAT_TYPE;
+                    GEN_SCVTF(lhs, callee);
                 } else {
-                    GEN_CODE("scvtf s%d, w%d", tmp, rhs->place);
-                    freeReg(rhs->place, int);
-                    rhs->place = tmp;
-                    rhs->dataType = FLOAT_TYPE;
+                    GEN_SCVTF(rhs, callee);
                 }
             } else {
                 /* reuse reg of int side */
