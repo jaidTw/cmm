@@ -457,9 +457,9 @@ void genExprNode(AST_NODE *node) {
 
     if(EXPR(node).kind == UNARY_OPERATION) {
         genExprRelatedNode(node->child);
+        node->place = node->child->place;
         switch(EXPR(node).op.unaryOp) {
             case UNARY_OP_NEGATIVE:
-                node->place = node->child->place;
                 GEN_CODE("%1$sneg %2$c%3$d, %2$c%3$d",
                     node->dataType == INT_TYPE ? "" : "f",
                     node->dataType == INT_TYPE ? 'w' : 's',
