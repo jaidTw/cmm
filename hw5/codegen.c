@@ -575,26 +575,33 @@ void genExprNode(AST_NODE *node) {
             case BINARY_OP_AND:
             case BINARY_OP_OR: {
                 /* eval lhs */
-                GEN_CODE("%scmp %c%d, #0",
-                    lhs->dataType == INT_TYPE ? "" : "f",
-                    lhs->dataType == INT_TYPE ? 'w' : 's',
-                    lhs->place);
                 int short_circuit_label = ++_label_count;
                 int end_label = ++_label_count;
-                GEN_CODE("b.%s _L%d",
-                    EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
-                    short_circuit_label);
+                if(lhs->dataType == INT_TYPE) {
+                    GEN_CODE("cb%s w%d, _L%d",
+                        EXPR(node).op.binaryOp == BINARY_OP_AND ? "z" : "nz",
+                        lhs->place,
+                        short_circuit_label);
+                } else {
+                    GEN_CODE("fcmp s%d, #0", lhs->place);
+                    GEN_CODE("b.%s _L%d",
+                        EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
+                        short_circuit_label);
+                }
 
                 /* eval rhs */
                 genExprRelatedNode(rhs);
-                GEN_CODE("%scmp %c%d, #0",
-                    rhs->dataType == INT_TYPE ? "" : "f",
-                    rhs->dataType == INT_TYPE ? 'w' : 's',
-                    rhs->place);
-
-                GEN_CODE("b.%s _L%d",
-                    EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
-                    short_circuit_label);
+                if(rhs->dataType == INT_TYPE) {
+                    GEN_CODE("cb%s w%d, _L%d",
+                        EXPR(node).op.binaryOp == BINARY_OP_AND ? "z" : "nz",
+                        rhs->place,
+                        short_circuit_label);
+                } else {
+                    GEN_CODE("fcmp s%d, #0", rhs->place);
+                    GEN_CODE("b.%s _L%d",
+                        EXPR(node).op.binaryOp == BINARY_OP_AND ? "eq" : "ne",
+                        short_circuit_label);
+                }
                 GEN_CODE("mov w%d, %d", node->place,
                     EXPR(node).op.binaryOp == BINARY_OP_AND ? 1 : 0);
                 GEN_CODE("b _L%d", end_label);
