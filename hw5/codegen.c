@@ -620,37 +620,33 @@ int genArrayRef(AST_NODE *node){
     int offset_tmp = allocReg(int, callee);
     int addr_tmp = allocReg(int, callee);
     int mul_tmp = allocReg(int, callee);
+
+    AST_NODE *traverse_dim_list = node->child;
+    genExprRelatedNode(traverse_dim_list);
+    GEN_CODE("mov w%d, w%d", offset_tmp, traverse_dim_list->place);
+    freeReg(traverse_dim_list->place, int);
+    int dim = 1;
+    FOR_SIBLINGS(traverse_dim, traverse_dim_list->rightSibling){
+        GEN_CODE("mov w%d, #%d", 
+            mul_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
+        genExprRelatedNode(traverse_dim);
+        /* offset = offset * dimension size[n-1] + dimension val[n] */
+        GEN_CODE("madd w%1$d, w%1$d, w%2$d, w%3$d",
+            offset_tmp, mul_tmp, traverse_dim->place);
+        freeReg(traverse_dim->place, int);
+        ++dim;
+    }
+
+    if(IS_LOCAL(node)){
+        GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
+    }
+    else {
+        GEN_CODE("ldr x%d, =__g_%s", addr_tmp, NAME(node));
+    }
+    GEN_CODE("add x%1$d, x%1$d, w%2$d, SXTW 2", addr_tmp, offset_tmp);
     freeReg(offset_tmp, int);
     freeReg(addr_tmp, int);
     freeReg(mul_tmp, int);
-        
-    int dim = 0;
-    GEN_CODE("mov w%d, #0", offset_tmp);
-    FOR_SIBLINGS(traverseDimList, node->child){
-        if(dim > 0){
-            GEN_CODE("mov w%d, #%d", 
-                mul_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
-            GEN_CODE("mul w%1$d, w%1$d, w%2$d",
-                offset_tmp, mul_tmp);
-        }
-        genExprRelatedNode(traverseDimList);
-        GEN_CODE("add w%1$d, w%1$d, w%2$d",
-            offset_tmp, traverseDimList->place);
-        freeReg(traverseDimList->place, int);
-        ++dim;
-    }
-    GEN_CODE("lsl w%1$d, w%1$d, #2", offset_tmp);
-    if(IS_LOCAL(node)){
-        GEN_CODE("add w%1$d, w%1$d, #%2$d",
-            offset_tmp, ENTRY(node)->offset);
-        GEN_CODE("mov x%d, x29", addr_tmp);
-    }
-    else {
-        GEN_CODE("ldr x%d, =__g_%s",
-            addr_tmp, NAME(node));
-    }
-    GEN_CODE("add x%1$d, x%1$d, w%2$d, SXTW",
-            addr_tmp, offset_tmp);
     return addr_tmp;
 }
 
