@@ -632,10 +632,13 @@ int genArrayRef(AST_NODE *node){
         genExprRelatedNode(traverseDimList);
         GEN_CODE("add w%1$d, w%1$d, w%2$d",
             offset_tmp, traverseDimList->place);
+        freeReg(traverseDimList->place, int);
         ++dim;
     }
     GEN_CODE("lsl w%1$d, w%1$d, #2", offset_tmp);
     if(IS_LOCAL(node)){
+        GEN_CODE("add w%1$d, w%1$d, #%2$d",
+            offset_tmp, ENTRY(node)->offset);
         GEN_CODE("mov x%d, x29", addr_tmp);
     }
     else {
@@ -655,13 +658,11 @@ void genVariableRvalue(AST_NODE *node) {
     
     if(IS_NORMAL(node)){
         if(IS_LOCAL(node)) {
-            /* TODO: array */
             GEN_CODE("ldr %c%d, [x29, #%d]",
                 node->dataType == INT_TYPE ? 'w' : 's',
                 node->place,
                 ENTRY(node)->offset);
         } else {
-            /* TODO: array */
             GEN_CODE("ldr %c%d, __g_%s",
                 node->dataType == INT_TYPE ? 'w' : 's',
                 node->place, NAME(node));
