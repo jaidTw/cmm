@@ -83,7 +83,7 @@ static int regs[32];
 static int FPregs[32];
 
 #define __CALLER_SAVED_int 9, 15
-#define __CALLEE_SAVED_int 19, 29
+#define __CALLEE_SAVED_int 19, 28
 #define __CALLER_SAVED_float 16, 31
 #define __CALLEE_SAVED_float 8, 15
 #define __INTERNAL_REGS_RANGE(name, START, END) int name = START; name <= END; ++name
@@ -868,7 +868,7 @@ void genFunctionDeclration(AST_NODE *node) {
 
     _local_var_offset = 0;
     genBlockNode(param_list->rightSibling);
-    _AR_offset += _local_var_offset;
+    _AR_offset += -_local_var_offset;
 
     genEpilogue();
 }

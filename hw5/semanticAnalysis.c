@@ -742,52 +742,69 @@ void evaluateExprValue(AST_NODE* exprNode)
         }
         else
         {
-            float leftValue = 0;
-            float rightValue = 0;
-            getExprOrConstValue(leftOp, NULL, &leftValue);
-            getExprOrConstValue(rightOp, NULL, &rightValue);
-            exprNode->dataType = FLOAT_TYPE;
-            switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp)
-            {
-            case BINARY_OP_ADD:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue + rightValue;
-                break;
-            case BINARY_OP_SUB:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue - rightValue;
-                break;
-            case BINARY_OP_MUL:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue * rightValue;
-                break;
-            case BINARY_OP_DIV:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue / rightValue;
-                break;
-            case BINARY_OP_EQ:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue == rightValue;
-                break;
-            case BINARY_OP_GE:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue >= rightValue;
-                break;
-            case BINARY_OP_LE:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue <= rightValue;
-                break;
-            case BINARY_OP_NE:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue != rightValue;
-                break;
-            case BINARY_OP_GT:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue > rightValue;
-                break;
-            case BINARY_OP_LT:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue < rightValue;
-                break;
-            case BINARY_OP_AND:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue && rightValue;
-                break;
-            case BINARY_OP_OR:
-                exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue || rightValue;
-                break;
-            default:
-                printf("Unhandled case in void evaluateExprValue(AST_NODE* exprNode)\n");
-                break;
+            if(exprNode->semantic_value.exprSemanticValue.op.binaryOp == BINARY_OP_ADD
+               || exprNode->semantic_value.exprSemanticValue.op.binaryOp == BINARY_OP_SUB
+               || exprNode->semantic_value.exprSemanticValue.op.binaryOp == BINARY_OP_MUL
+               || exprNode->semantic_value.exprSemanticValue.op.binaryOp == BINARY_OP_DIV) {
+                float leftValue = 0;
+                float rightValue = 0;
+                getExprOrConstValue(leftOp, NULL, &leftValue);
+                getExprOrConstValue(rightOp, NULL, &rightValue);
+                exprNode->dataType = FLOAT_TYPE;
+                switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp)
+                {
+                case BINARY_OP_ADD:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue + rightValue;
+                    break;
+                case BINARY_OP_SUB:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue - rightValue;
+                    break;
+                case BINARY_OP_MUL:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue * rightValue;
+                    break;
+                case BINARY_OP_DIV:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.fValue = leftValue / rightValue;
+                    break;
+                default:
+                    printf("Unhandled case in void evaluateExprValue(AST_NODE* exprNode)\n");
+                    break;
+                }
+            } else {
+                float leftValue = 0;
+                float rightValue = 0;
+                getExprOrConstValue(leftOp, NULL, &leftValue);
+                getExprOrConstValue(rightOp, NULL, &rightValue);
+                exprNode->dataType = INT_TYPE;
+                switch(exprNode->semantic_value.exprSemanticValue.op.binaryOp)
+                {
+                case BINARY_OP_EQ:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue == rightValue;
+                    break;
+                case BINARY_OP_GE:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue >= rightValue;
+                    break;
+                case BINARY_OP_LE:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue <= rightValue;
+                    break;
+                case BINARY_OP_NE:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue != rightValue;
+                    break;
+                case BINARY_OP_GT:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue > rightValue;
+                    break;
+                case BINARY_OP_LT:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue < rightValue;
+                    break;
+                case BINARY_OP_AND:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue && rightValue;
+                    break;
+                case BINARY_OP_OR:
+                    exprNode->semantic_value.exprSemanticValue.constEvalValue.iValue = leftValue || rightValue;
+                    break;
+                default:
+                    printf("Unhandled case in void evaluateExprValue(AST_NODE* exprNode)\n");
+                    break;
+                }
             }
         }
     }
