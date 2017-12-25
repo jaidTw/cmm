@@ -619,15 +619,19 @@ void genExprNode(AST_NODE *node) {
 int genArrayRef(AST_NODE *node){
     int offset_tmp = allocReg(int, callee);
     int addr_tmp = allocReg(int, callee);
+    int mul_tmp = allocReg(int, callee);
     freeReg(offset_tmp, int);
     freeReg(addr_tmp, int);
+    freeReg(mul_tmp, int);
         
     int dim = 0;
     GEN_CODE("mov w%d, #0", offset_tmp);
     FOR_SIBLINGS(traverseDimList, node->child){
         if(dim > 0){
-            GEN_CODE("mul w%1$d, w%1$d, #%2$d",
-                offset_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
+            GEN_CODE("mov w%d, #%d", 
+                mul_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
+            GEN_CODE("mul w%1$d, w%1$d, w%2$d",
+                offset_tmp, mul_tmp);
         }
         genExprRelatedNode(traverseDimList);
         GEN_CODE("add w%1$d, w%1$d, w%2$d",

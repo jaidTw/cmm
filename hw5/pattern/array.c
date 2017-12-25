@@ -1,14 +1,15 @@
+int g1[1][20][1];
 int MAIN() {
-    int l1[2];
-    int l2;
-    l1[0] = 1;
-    l1[1] = 10;
-    write(l1[0]);
+    int l1[2][10];
+    l1[0][1] = 1;
+    l1[1][2] = 10;
+    write(l1[0][1]);
     write("\n");
-    write(l1[1]);
+    write(l1[1][2]);
     write("\n");
-    l2 = l1[0];
-    write(l2);
+    
+    g1[0][5][0] = 100;
+    write(g1[0][5][0]);
     write("\n");
  
     return 0;
