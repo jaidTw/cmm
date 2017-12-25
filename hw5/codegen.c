@@ -189,6 +189,7 @@ void genGlobalDeclration(AST_NODE *node);
 void genGlobalDeclrations(AST_NODE *node);
 void genProgramNode(AST_NODE *_node);
 void genFunctionDeclration(AST_NODE *node);
+int genArrayRef(AST_NODE *node);
 void genVariableRvalue(AST_NODE *node);
 void genConstValueNode(AST_NODE *node);
 void genGeneralNode(AST_NODE *node);
@@ -615,6 +616,37 @@ void genExprNode(AST_NODE *node) {
     }
 }
 
+int genArrayRef(AST_NODE *node){
+    int offset_tmp = allocReg(int, callee);
+    int addr_tmp = allocReg(int, callee);
+    freeReg(offset_tmp, int);
+    freeReg(addr_tmp, int);
+        
+    int dim = 0;
+    GEN_CODE("mov w%d, #0", offset_tmp);
+    FOR_SIBLINGS(traverseDimList, node->child){
+        if(dim > 0){
+            GEN_CODE("mul w%1$d, w%1$d, #%2$d",
+                offset_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
+        }
+        genExprRelatedNode(traverseDimList);
+        GEN_CODE("add w%1$d, w%1$d, w%2$d",
+            offset_tmp, traverseDimList->place);
+        ++dim;
+    }
+    GEN_CODE("lsl w%1$d, w%1$d, #2", offset_tmp);
+    if(IS_LOCAL(node)){
+        GEN_CODE("mov x%d, x29", addr_tmp);
+    }
+    else {
+        GEN_CODE("ldr x%d, =__g_%s",
+            addr_tmp, NAME(node));
+    }
+    GEN_CODE("add x%1$d, x%1$d, w%2$d, SXTW",
+            addr_tmp, offset_tmp);
+    return addr_tmp;
+}
+
 void genVariableRvalue(AST_NODE *node) {
     if(node->dataType == INT_TYPE)
         node->place = allocReg(int, callee);
@@ -636,34 +668,8 @@ void genVariableRvalue(AST_NODE *node) {
 
         }
     } else {
-        int offset_tmp = allocReg(int, callee);
-        int addr_tmp = allocReg(int, callee);
-        freeReg(offset_tmp, int);
-        freeReg(addr_tmp, int);
-        
-        int dim = 0;
-        GEN_CODE("mov x%d, #0", offset_tmp);
-        FOR_SIBLINGS(traverseDimList, node->child){
-            if(dim > 0){
-                GEN_CODE("mul x%1$d, x%1$d, #%2$d",
-                    offset_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
-            }
-            genExprRelatedNode(traverseDimList);
-            GEN_CODE("add x%1$d, x%1$d, x%2$d",
-                offset_tmp, traverseDimList->place);
-            ++dim;
-        }
-        GEN_CODE("lsl x%1$d, x%1$d, #2", offset_tmp);
-        if(IS_LOCAL(node)){
-            GEN_CODE("mov x%d, x29", addr_tmp);
-        }
-        else {
-            GEN_CODE("ldr x%d, =__g_%s",
-                addr_tmp, NAME(node));
-        }
-        GEN_CODE("add x%1$d, x%1$d, x%2$d",
-                addr_tmp, offset_tmp);
-        GEN_CODE("ldr %c%d, [x%d, #0]",
+        int addr_tmp = genArrayRef(node);
+        GEN_CODE("ldr %c%d, [x%d]",
             node->dataType == INT_TYPE ? 'w' : 's',
             node->place, addr_tmp);
     }
@@ -815,18 +821,25 @@ void genAssignmentStmt(AST_NODE *node) {
             GEN_SCVTF(rhs, caller);
         }
     }
-    if(IS_LOCAL(lhs)) {
-        GEN_CODE("str %c%d, [x29, #%d]",
-            lhs->dataType == INT_TYPE ? 'w' : 's',
-            rhs->place,
-            ENTRY(lhs)->offset);
+    if(IS_NORMAL(lhs)){
+        if(IS_LOCAL(lhs)) {
+            GEN_CODE("str %c%d, [x29, #%d]",
+                lhs->dataType == INT_TYPE ? 'w' : 's',
+                rhs->place,
+                ENTRY(lhs)->offset);
+        } else {
+            int temp = allocReg(int, caller);
+            GEN_CODE("ldr x%d, =__g_%s", temp, NAME(lhs));
+            GEN_CODE("str %c%d, [x%d]",
+                lhs->dataType == INT_TYPE ? 'w' : 's',
+                rhs->place, temp);
+            freeReg(temp, int);
+        }
     } else {
-        int temp = allocReg(int, caller);
-        GEN_CODE("ldr x%d, =__g_%s", temp, NAME(lhs));
+        int addr_tmp = genArrayRef(lhs);
         GEN_CODE("str %c%d, [x%d]",
             lhs->dataType == INT_TYPE ? 'w' : 's',
-            rhs->place, temp);
-        freeReg(temp, int);
+            rhs->place, addr_tmp);
     }
     if(rhs->dataType == INT_TYPE)
         freeReg(rhs->place, int);
