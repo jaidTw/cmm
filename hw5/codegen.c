@@ -626,16 +626,18 @@ void genExprNode(AST_NODE *node) {
 }
 
 int genArrayRef(AST_NODE *node) {
-    int offset_tmp = allocReg(int, callee);
-    int addr_tmp = allocReg(int, callee);
+    AST_NODE *dim_list = node->child;
 
-    AST_NODE *traverse_dim_list = node->child;
-    if(traverse_dim_list){
-        genExprRelatedNode(traverse_dim_list);
-        GEN_CODE("mov w%d, w%d", offset_tmp, traverse_dim_list->place);
-        freeReg(traverse_dim_list->place, int);
+    /* has subscript */
+    if(dim_list) {
+        int offset_tmp = allocReg(int, callee);
+        int addr_tmp = allocReg(int, callee);
+        genExprRelatedNode(dim_list);
+        GEN_CODE("mov w%d, w%d", offset_tmp, dim_list->place);
+        freeReg(dim_list->place, int);
         int dim = 1;
-        FOR_SIBLINGS(traverse_dim, traverse_dim_list->rightSibling){
+        /* for each subsciprt */
+        FOR_SIBLINGS(traverse_dim, dim_list->rightSibling) {
             int dim_size = allocReg(int, callee);
             GEN_CODE("mov w%d, #%d", 
                 dim_size, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
@@ -647,48 +649,57 @@ int genArrayRef(AST_NODE *node) {
             freeReg(dim_size, int);
             ++dim;
         }
+
+        /* if subscript doesn't match dimension, it's a pointer
+         * treat remain field as 0
+         */
         int dim_size = allocReg(int, callee);
-        for(dim; dim < ARRAY_PROP(node).dimension; ++dim){
+        for(; dim < ARRAY_PROP(node).dimension; ++dim) {
             GEN_CODE("mov w%d, #%d",
                 dim_size, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
             GEN_CODE("mul w%1$d, w%1$d, w%2$d",
                 offset_tmp, dim_size);
         }
         freeReg(dim_size, int);
+        if(ENTRY(node)->has_pointer) {
+            GEN_CODE("ldr x%d, [x29, #%d]", addr_tmp, ENTRY(node)->offset);
+        } else if(IS_LOCAL(node)) {
+            GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
+        } else {
+            GEN_CODE("ldr x%d, =__g_%s", addr_tmp, NAME(node));
+        }
+        /* addr = addr + offset << 2 */
+        GEN_CODE("add x%1$d, x%1$d, w%2$d, sxtw 2", addr_tmp, offset_tmp);
+        freeReg(offset_tmp, int);
+        freeReg(addr_tmp, int);
+        return addr_tmp;
     }
     else{
-        GEN_CODE("mov w%d, #0", offset_tmp);
+        int addr_tmp = allocReg(int, callee);
+        if(ENTRY(node)->has_pointer) {
+            GEN_CODE("ldr x%d, [x29, #%d]", addr_tmp, ENTRY(node)->offset);
+        } else if(IS_LOCAL(node)) {
+            GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
+        } else {
+            GEN_CODE("ldr x%d, =__g_%s", addr_tmp, NAME(node));
+        }
+        freeReg(addr_tmp, int);
+        return addr_tmp;
     }
-
-    if(ENTRY(node)->has_pointer){
-        GEN_CODE("ldr x%d, [x29, #%d]", addr_tmp, ENTRY(node)->offset);
-    }
-    else if(IS_LOCAL(node)){
-        GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
-    } else {
-        GEN_CODE("ldr x%d, =__g_%s", addr_tmp, NAME(node));
-    }
-    /* addr = addr + offset << 2 */
-    GEN_CODE("add x%1$d, x%1$d, w%2$d, sxtw 2", addr_tmp, offset_tmp);
-    freeReg(offset_tmp, int);
-    freeReg(addr_tmp, int);
-    return addr_tmp;
 }
 
 void genVariableRvalue(AST_NODE *node) {
-    if(node->dataType == INT_TYPE || 
-       node->dataType == INT_PTR_TYPE ||
-       node->dataType == FLOAT_PTR_TYPE)
-        node->place = allocReg(int, callee);
-    else
+    if(node->dataType == FLOAT_TYPE)
         node->place = allocReg(float, callee);
-    
-    if (node->dataType == INT_PTR_TYPE || node->dataType == FLOAT_PTR_TYPE){
+    else
+        node->place = allocReg(int, callee);
+
+    if(node->dataType == INT_PTR_TYPE || node->dataType == FLOAT_PTR_TYPE) {
+        /* pointer (arguments) */
         int addr_tmp = genArrayRef(node);
         GEN_CODE("mov x%d, x%d", node->place, addr_tmp);
-        return;
-    }
-    if(IS_NORMAL(node)){
+    } else if(IS_NORMAL(node)) {
+        /* scalar */
         if(IS_LOCAL(node)) {
             GEN_CODE("ldr %c%d, [x29, #%d]",
                 node->dataType == INT_TYPE ? 'w' : 's',
@@ -701,6 +712,7 @@ void genVariableRvalue(AST_NODE *node) {
 
         }
     } else {
+        /* array */
         int addr_tmp = genArrayRef(node);
         GEN_CODE("ldr %c%d, [x%d]",
             node->dataType == INT_TYPE ? 'w' : 's',
