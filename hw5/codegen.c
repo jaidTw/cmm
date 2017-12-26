@@ -231,10 +231,10 @@ void genLocalDeclaration(AST_NODE* node) {
     AST_NODE *type_node = node->child;
     FOR_SIBLINGS(id, type_node->rightSibling) {
         SymbolTableEntry *entry = ENTRY(id);
+        entry->is_pointer = 0;
         if(IS_SCALAR(id)) {
             _local_var_offset -= 4;
             entry->offset = _local_var_offset;
-            entry->is_pointer = 0;
             if(ID(id).kind == WITH_INIT_ID) {
                 AST_NODE *relop = id->child;
                 genExprRelatedNode(relop);
@@ -253,7 +253,6 @@ void genLocalDeclaration(AST_NODE* node) {
             }
             _local_var_offset -= size;
             entry->offset = _local_var_offset;
-            entry->is_pointer = 0;
         }
     }
 }
@@ -923,7 +922,7 @@ void genFunctionDeclration(AST_NODE *node) {
         FOR_SIBLINGS(param, param_list->child) {
             AST_NODE *id = param->child->rightSibling;
             ENTRY(id)->offset = offset;
-            ENTRY(id)->is_pointer = IS_SCALAR(id)? 0:1;
+            ENTRY(id)->is_pointer = IS_SCALAR(id) ? 0 : 1;
             offset += 8;
         }
     }
