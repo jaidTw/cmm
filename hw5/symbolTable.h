@@ -81,7 +81,7 @@ typedef struct SymbolTableEntry
     SymbolAttribute* attribute;
     int nestingLevel;
     int offset;
-
+    int has_pointer;
 } SymbolTableEntry;
 
 typedef struct SymbolTable

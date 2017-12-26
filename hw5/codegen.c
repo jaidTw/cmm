@@ -234,6 +234,7 @@ void genLocalDeclaration(AST_NODE* node) {
         if(IS_SCALAR(id)) {
             _local_var_offset -= 4;
             entry->offset = _local_var_offset;
+            entry->has_pointer = 0;
             if(ID(id).kind == WITH_INIT_ID) {
                 AST_NODE *relop = id->child;
                 genExprRelatedNode(relop);
@@ -252,6 +253,7 @@ void genLocalDeclaration(AST_NODE* node) {
             }
             _local_var_offset -= size;
             entry->offset = _local_var_offset;
+            entry->has_pointer = 0;
         }
     }
 }
@@ -622,22 +624,36 @@ int genArrayRef(AST_NODE *node){
     int mul_tmp = allocReg(int, callee);
 
     AST_NODE *traverse_dim_list = node->child;
-    genExprRelatedNode(traverse_dim_list);
-    GEN_CODE("mov w%d, w%d", offset_tmp, traverse_dim_list->place);
-    freeReg(traverse_dim_list->place, int);
-    int dim = 1;
-    FOR_SIBLINGS(traverse_dim, traverse_dim_list->rightSibling){
-        GEN_CODE("mov w%d, #%d", 
-            mul_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
-        genExprRelatedNode(traverse_dim);
-        /* offset = offset * dimension size[n-1] + dimension val[n] */
-        GEN_CODE("madd w%1$d, w%1$d, w%2$d, w%3$d",
-            offset_tmp, mul_tmp, traverse_dim->place);
-        freeReg(traverse_dim->place, int);
-        ++dim;
+    if(traverse_dim_list){
+        genExprRelatedNode(traverse_dim_list);
+        GEN_CODE("mov w%d, w%d", offset_tmp, traverse_dim_list->place);
+        freeReg(traverse_dim_list->place, int);
+        int dim = 1;
+        FOR_SIBLINGS(traverse_dim, traverse_dim_list->rightSibling){
+            GEN_CODE("mov w%d, #%d", 
+                mul_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
+            genExprRelatedNode(traverse_dim);
+            /* offset = offset * dimension size[n-1] + dimension val[n] */
+            GEN_CODE("madd w%1$d, w%1$d, w%2$d, w%3$d",
+                offset_tmp, mul_tmp, traverse_dim->place);
+            freeReg(traverse_dim->place, int);
+            ++dim;
+        }
+        for(dim; dim < ARRAY_PROP(node).dimension; ++dim){
+            GEN_CODE("mov w%d, #%d",
+                mul_tmp, ARRAY_PROP(node).sizeInEachDimension[dim-1]);
+            GEN_CODE("mul w%1$d, w%1$d, w%2$d",
+                offset_tmp, mul_tmp);
+        }
+    }
+    else{
+        GEN_CODE("mov w%d, #0", offset_tmp);
     }
 
-    if(IS_LOCAL(node)){
+    if(ENTRY(node)->has_pointer){
+        GEN_CODE("ldr x%d, [x29, #%d]", addr_tmp, ENTRY(node)->offset);
+    }
+    else if(IS_LOCAL(node)){
         GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
     }
     else {
@@ -651,11 +667,18 @@ int genArrayRef(AST_NODE *node){
 }
 
 void genVariableRvalue(AST_NODE *node) {
-    if(node->dataType == INT_TYPE)
+    if(node->dataType == INT_TYPE || 
+       node->dataType == INT_PTR_TYPE ||
+       node->dataType == FLOAT_PTR_TYPE)
         node->place = allocReg(int, callee);
     else
         node->place = allocReg(float, callee);
     
+    if (node->dataType == INT_PTR_TYPE || node->dataType == FLOAT_PTR_TYPE){
+        int addr_tmp = genArrayRef(node);
+        GEN_CODE("mov x%d, x%d", node->place, addr_tmp);
+        return;
+    }
     if(IS_NORMAL(node)){
         if(IS_LOCAL(node)) {
             GEN_CODE("ldr %c%d, [x29, #%d]",
@@ -875,6 +898,7 @@ void genFunctionDeclration(AST_NODE *node) {
         FOR_SIBLINGS(param, param_list->child) {
             AST_NODE *id = param->child->rightSibling;
             ENTRY(id)->offset = offset;
+            ENTRY(id)->has_pointer = IS_SCALAR(id)? 0:1;
             offset += 8;
         }
     }
@@ -993,6 +1017,7 @@ int __passPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
         }
     } else {
         /* array */
+        GEN_CODE("str x%d, [sp, #%d]", arg->place, offset);
     }
     return offset - 8;
 }
