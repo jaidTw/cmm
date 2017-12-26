@@ -234,7 +234,7 @@ void genLocalDeclaration(AST_NODE* node) {
         if(IS_SCALAR(id)) {
             _local_var_offset -= 4;
             entry->offset = _local_var_offset;
-            entry->has_pointer = 0;
+            entry->is_pointer = 0;
             if(ID(id).kind == WITH_INIT_ID) {
                 AST_NODE *relop = id->child;
                 genExprRelatedNode(relop);
@@ -253,7 +253,7 @@ void genLocalDeclaration(AST_NODE* node) {
             }
             _local_var_offset -= size;
             entry->offset = _local_var_offset;
-            entry->has_pointer = 0;
+            entry->is_pointer = 0;
         }
     }
 }
@@ -414,6 +414,7 @@ void genGlobalDeclration(AST_NODE *node) {
             }
             GEN_GLOBAL(array, NAME(id), size);
         }
+        ENTRY(id)->is_pointer = 0;
     }
 }
 
@@ -661,7 +662,7 @@ int genArrayRef(AST_NODE *node) {
                 offset_tmp, dim_size);
         }
         freeReg(dim_size, int);
-        if(ENTRY(node)->has_pointer) {
+        if(ENTRY(node)->is_pointer) {
             GEN_CODE("ldr x%d, [x29, #%d]", addr_tmp, ENTRY(node)->offset);
         } else if(IS_LOCAL(node)) {
             GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
@@ -676,7 +677,7 @@ int genArrayRef(AST_NODE *node) {
     }
     else{
         int addr_tmp = allocReg(int, callee);
-        if(ENTRY(node)->has_pointer) {
+        if(ENTRY(node)->is_pointer) {
             GEN_CODE("ldr x%d, [x29, #%d]", addr_tmp, ENTRY(node)->offset);
         } else if(IS_LOCAL(node)) {
             GEN_CODE("add x%d, x29, #%d", addr_tmp, ENTRY(node)->offset);
@@ -922,7 +923,7 @@ void genFunctionDeclration(AST_NODE *node) {
         FOR_SIBLINGS(param, param_list->child) {
             AST_NODE *id = param->child->rightSibling;
             ENTRY(id)->offset = offset;
-            ENTRY(id)->has_pointer = IS_SCALAR(id)? 0:1;
+            ENTRY(id)->is_pointer = IS_SCALAR(id)? 0:1;
             offset += 8;
         }
     }
