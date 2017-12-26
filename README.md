@@ -9,11 +9,12 @@ C-- is based on ANSI C standard, thus only the differences are list below.
 
 ### Types
 C-- onlys support five types, which are :
-* int - signed integer - 4 bytes
-* float - single percision floating pointer number - 4 bytes
-* string literal - ascii string terminated with NULL byte, 1 byte for each character
-* int [] - address of an int array \(only for function parameter\) - 8 bytes
-* float [] - address of an float array \(only for function parameter\) - 8 bytes
+* `int` - signed integer - 4 bytes
+* `float` - single percision floating pointer number - 4 bytes
+* `string literal` - ascii string terminated with NULL byte, 1 byte for each character
+(Not declarable since it's a literal, should only be used with write(), which will mention later)
+* `int []` - address of an int array \(only for function parameter\) - 8 bytes
+* `float []` - address of an float array \(only for function parameter\) - 8 bytes
 
 ### Operators
 Only support the following operators:
@@ -75,7 +76,7 @@ Run
 ```
 $ ./parser input_file
 ```
-the output file we be named output.s, which contains the aarch64 assembly.
+The output file we be named output.s, which contains the aarch64 assembly.
 
 `output.s` isn't self contained, it has to be compiled with `main.S`, which is a wrapper file provding IO rountines and entry loading for the compiled file.
 
