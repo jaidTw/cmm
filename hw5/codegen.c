@@ -75,8 +75,10 @@ static int _const;              /* constant counter */
 static int _if_has_return;      /* use with optimization for if-else block containing return */
 
 /* cached current function information */
-static DATA_TYPE _return_type;  
-static char *_func_name;
+static DATA_TYPE _return_type;
+static char *_func_name = "";
+
+static int _save_retval = 0;
 
 /* for register allocation */
 static int regs[32];
@@ -93,6 +95,17 @@ static int FPregs[32];
 #define __INTERNAL_WALK_REG_Q(name, START, END) static int name = START; if(name > END) name = START; for(;name <= END; ++name)
 #define __WALK_REG_Q(name, ...) __INTERNAL_WALK_REG_Q(name, __VA_ARGS__)
 #define WALK_REG_Q(name, conv, type) __WALK_REG_Q(name, __##conv##_SAVED_##type)
+#define CHECK_REG_LEAK() { \
+    printf("before function %s:\n", _func_name); \
+    for(int i = 0; i < 31; ++i) { \
+        if(regs[i]) \
+            printf("\tx%d not freed\n", i); \
+    } \
+    for(int i = 0; i < 31; ++i) { \
+        if(FPregs[i]) \
+            printf("\td%d not freed\n", i); \
+    } \
+}
 
 int __allocReg_int_caller(int fallback);
 int __allocReg_int_callee(int fallback);
@@ -103,7 +116,7 @@ int __allocReg_int_caller(int fallback) {
     WALK_REG_Q(qtop, CALLER, int) {
         if(!regs[qtop]) {
             regs[qtop] = 1;
-            return qtop;
+            return qtop++;
         }
     }
     return fallback ? __allocReg_int_callee(0) : -1;
@@ -113,7 +126,7 @@ int __allocReg_int_callee(int fallback) {
     WALK_REG_Q(qtop, CALLEE, int) {
         if(!regs[qtop]) {
             regs[qtop] = 1;
-            return qtop;
+            return qtop++;
         }
     }
     return fallback ? __allocReg_int_caller(0) : -1;
@@ -123,7 +136,7 @@ int __allocReg_float_caller(int fallback) {
     WALK_REG_Q(qtop, CALLER, float) {
         if(!FPregs[qtop]) {
             FPregs[qtop] = 1;
-            return qtop;
+            return qtop++;
         }
     }
     return fallback ? __allocReg_int_callee(0) : -1;
@@ -133,7 +146,7 @@ int __allocReg_float_callee(int fallback) {
     WALK_REG_Q(qtop, CALLEE, float) {
         if(!FPregs[qtop]) {
             FPregs[qtop] = 1;
-            return qtop;
+            return qtop++;
         }
     }
     return fallback ? __allocReg_int_caller(0) : -1;
@@ -170,6 +183,13 @@ static __inline__ void genWrite(int reg, DATA_TYPE type) {
     node->dataType = FLOAT_TYPE; \
 }
 
+struct {
+    DATA_TYPE type;
+    int place;
+    int offset;
+} _param_info[100];
+int _param_stack_top = 0;
+
 
 void genAssignOrExpr(AST_NODE *node);
 void genExprRelatedNode(AST_NODE *node);
@@ -198,7 +218,7 @@ void genEpilogue();
 
 int genSaveCallerRegs();
 void genRestoreCallerRegs();
-int genParameterPassing(Parameter* param, AST_NODE* relop, int start_offset);
+int evalParameter(Parameter* param, AST_NODE* relop);
 
 void genGeneralNode(AST_NODE *node) {
     switch(node->nodeType) {
@@ -301,32 +321,63 @@ void genFunctionCall(AST_NODE *node) {
         else
             freeReg(relop_expr->place, int);
     } else if(SIGN(node->child)->parametersCount > 0) {
+        DATA_TYPE return_type = SIGN(node->child)->returnType;
+        if(_save_retval) {
+            if(return_type == INT_TYPE)
+                node->place = allocReg(int, callee);
+            else if(return_type == FLOAT_TYPE)
+                node->place = allocReg(float, callee);
+        }
         /* eval params */
         genGeneralNode(relop_expr);
-        /* pre-free the regs holding arguments so they won't be saved in genSaveCallerRegs() */
-        FOR_SIBLINGS(param, relop_expr->child) {
-            if(param->dataType == FLOAT_TYPE)
-                freeReg(param->place, float);
-            else /* INT_TYPE, *_PTR_TYPE */
-                freeReg(param->place, int);
-        }
-
-        int save_count = genSaveCallerRegs();
         /* pass args */
         Parameter *param = SIGN(node->child)->parameterList;
-        int size = genParameterPassing(param, relop_expr, save_count * 8);
+        /* type conversion occurs here */
+        int param_size = evalParameter(param, relop_expr);
+        /* pre-free the regs holding arguments so they won't be saved in genSaveCallerRegs() */
+        for(int i = _param_stack_top - 1; i >= 0; --i) {
+            if(_param_info[i].type == FLOAT_TYPE)
+                freeReg(_param_info[i].place, float);
+            else /* INT_TYPE, *_PTR_TYPE */
+                freeReg(_param_info[i].place, int);
+        }
+        int caller_size = genSaveCallerRegs() * 8;
+        /* generate param store instructions */
+        for(int i = _param_stack_top - 1; i >= 0; --i) {
+            if(_param_info[i].type == FLOAT_TYPE) {
+                GEN_CODE("str d%d, [sp, #%d]",
+                    _param_info[i].place, _param_info[i].offset - caller_size);
+            } else { /* INT_TYPE, *_PTR_TYPE */
+                GEN_CODE("str x%d, [sp, #%d]",
+                    _param_info[i].place, _param_info[i].offset - caller_size);
+            }
+        }
+        int size = caller_size + param_size;
         GEN_CODE("sub sp, sp, #%d", size);
         GEN_CODE("bl _start_%s", func_name);
         /* restore sp space for args and saved regs*/
         GEN_CODE("add sp, sp, #%d", size);
-        if(save_count)
+        if(caller_size)
             genRestoreCallerRegs();
-        return ;
+        if(_save_retval) {
+            if(return_type == INT_TYPE) {
+                GEN_CODE("mov w%d, w0", node->place);
+            } else if(return_type == FLOAT_TYPE) {
+                GEN_CODE("fmov s%d, s0", node->place);
+            }
+        }
     } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_READ)) {
         GEN_CODE("bl _read_int");
     } else if(!strcmp(func_name, SYMBOL_TABLE_SYS_LIB_FREAD)) {
         GEN_CODE("bl _read_float");
     } else {
+        DATA_TYPE return_type = SIGN(node->child)->returnType;
+        if(_save_retval) {
+            if(return_type == INT_TYPE)
+                node->place = allocReg(int, callee);
+            else
+                node->place = allocReg(float, callee);
+        }
         int save_count = genSaveCallerRegs();
         if(save_count)
             GEN_CODE("sub sp, sp, #%d", 8 * save_count);
@@ -334,6 +385,13 @@ void genFunctionCall(AST_NODE *node) {
         if(save_count) {
             GEN_CODE("add sp, sp, #%d", 8 * save_count);
             genRestoreCallerRegs();
+        }
+        if(_save_retval) {
+            if(return_type == INT_TYPE) {
+                GEN_CODE("mov w%d, w0", node->place);
+            } else if(return_type == FLOAT_TYPE) {
+                GEN_CODE("mov s%d, s0", node->place);
+            }
         }
     }
 }
@@ -459,6 +517,8 @@ void genExprNode(AST_NODE *node) {
         return ;
     }
 
+    int local_save_retval = _save_retval;
+    _save_retval = 1;
     if(EXPR(node).kind == UNARY_OPERATION) {
         genExprRelatedNode(node->child);
         node->place = node->child->place;
@@ -627,6 +687,7 @@ void genExprNode(AST_NODE *node) {
             }
         }
     }
+    _save_retval = local_save_retval;
 }
 
 int genArrayRef(AST_NODE *node) {
@@ -764,7 +825,7 @@ void genIfStmt(AST_NODE *node) {
             freeReg(cond->place, float);
         }
 
-        genBlockNode(if_block);
+        genStmtNode(if_block);
         GEN_LABEL("_L%d", end_label);
         return ;
     }
@@ -781,7 +842,7 @@ void genIfStmt(AST_NODE *node) {
     }
 
     _if_has_return = 0;
-    genBlockNode(if_block);
+    genStmtNode(if_block);
     /* try to eliminate unconditional branch if block contains return
      * this checking isn't always working, need more sophiscated reachability analysis
      */
@@ -789,10 +850,7 @@ void genIfStmt(AST_NODE *node) {
         GEN_CODE("b _L%d", end_label);
     _if_has_return = 0;
     GEN_LABEL("_L%d", else_label);
-    if(else_block->nodeType == STMT_NODE)
-        genIfStmt(else_block);
-    else
-        genBlockNode(else_block);
+    genStmtNode(else_block);
 
     if(!_if_has_return)
         GEN_CODE("b _L%d", end_label);
@@ -817,9 +875,9 @@ void genForStmt(AST_NODE *node) {
     /* if cond contains multiple expr, we must evaluate all */
     while(cond_result) {
         if(cond_result->dataType == INT_TYPE)
-            freeReg(cond->place, int);
+            freeReg(cond_result->place, int);
         else
-            freeReg(cond->place, float);
+            freeReg(cond_result->place, float);
         if(!cond_result->rightSibling)
             break;
         cond_result = cond_result->rightSibling;
@@ -835,7 +893,7 @@ void genForStmt(AST_NODE *node) {
         }
     }
 
-    genBlockNode(block);
+    genStmtNode(block);
     genGeneralNode(loop);
     GEN_CODE("b _L%d", start_label);
     GEN_LABEL("_L%d", end_label);
@@ -860,7 +918,7 @@ void genWhileStmt(AST_NODE *node) {
         freeReg(cond->place, float);
     }
 
-    genBlockNode(block);
+    genStmtNode(block);
     GEN_CODE("b _L%d", start_label);
     GEN_LABEL("_L%d", end_label);
 }
@@ -1004,7 +1062,7 @@ int genSaveCallerRegs() {
         }
     }
     for(CALLER_SAVED(i, float)) {
-        if(regs[i]) {
+        if(FPregs[i]) {
             GEN_CODE("str d%d, [sp, #%d]", i, -8 * count);
             ++count;
         }
@@ -1021,17 +1079,17 @@ void genRestoreCallerRegs() {
         }
     }
     for(CALLER_SAVED(i, float)) {
-        if(regs[i]) {
+        if(FPregs[i]) {
             GEN_CODE("ldr d%d, [sp, #%d]", i, -8 * count);
             ++count;
         }
     }
 }
 
-int __passPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
+int __evalPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
     if(arg == NULL)
         return -start_offset;
-    int offset = __passPrameter(param->next, arg->rightSibling, start_offset);
+    int offset = __evalPrameter(param->next, arg->rightSibling, start_offset);
     if(PARAM_IS_SCALAR(param)) {
         if(PARAM_SCALAR_TYPE(param) != arg->dataType) {
             if(arg->dataType == INT_TYPE) {
@@ -1040,16 +1098,15 @@ int __passPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
                 GEN_FCVTAS(arg, callee);
             }
         }
-        GEN_CODE("str %c%d, [sp, #%d]", 
-            PARAM_SCALAR_TYPE(param) == INT_TYPE ? 'x' : 'd',
-            arg->place, offset);
-    } else {
-        /* array */
-        GEN_CODE("str x%d, [sp, #%d]", arg->place, offset);
     }
+    _param_info[_param_stack_top].type = arg->dataType;
+    _param_info[_param_stack_top].place = arg->place;
+    _param_info[_param_stack_top].offset = offset;
+    _param_stack_top++;
     return offset - 8;
 }
 
-int genParameterPassing(Parameter* param, AST_NODE* relop, int start_offset) {
-    return -__passPrameter(param, relop->child, start_offset);
+int evalParameter(Parameter* param, AST_NODE* relop) {
+    _param_stack_top = 0;
+    return -__evalPrameter(param, relop->child, 0);
 }
