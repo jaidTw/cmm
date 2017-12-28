@@ -545,7 +545,11 @@ void genExprNode(AST_NODE *node) {
                 } else if(EXPR(node).op.binaryOp == BINARY_OP_MUL) {
                     GEN_OP(node->dataType, mul, lhs->place, lhs->place, rhs->place);
                 } else if(EXPR(node).op.binaryOp == BINARY_OP_DIV) {
-                    GEN_OP(node->dataType, div, lhs->place, lhs->place, rhs->place);
+                    if(node->dataType == INT_TYPE) {
+                        GEN_CODE("sdiv w%d, w%d, w%d", lhs->place, lhs->place, rhs->place);
+                    } else {
+                        GEN_CODE("fdiv s%d, s%d, s%d", lhs->place, lhs->place, rhs->place);
+                    }
                 }
 
                 if(node->dataType == INT_TYPE)
@@ -816,12 +820,14 @@ void genForStmt(AST_NODE *node) {
             freeReg(cond->place, int);
         else
             freeReg(cond->place, float);
+        if(!cond_result->rightSibling)
+            break;
         cond_result = cond_result->rightSibling;
     }
-    /* but only use the last as result, and cond-expr may be empty */
+    /* but only use the last expr as result, and cond-expr may be empty */
     if(cond_result) {
         /* try to optimize using CBZ for INT_TYPE */
-        if(cond->dataType == INT_TYPE) {
+        if(cond_result->dataType == INT_TYPE) {
             GEN_CODE("cbz w%d, _L%d", cond_result->place, end_label);
         } else {
             GEN_CODE("fcmp s%d, #0", cond_result->place);
