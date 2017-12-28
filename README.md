@@ -1,11 +1,11 @@
 # cmm
 ## Introduction
-cmm (c minus minus) is a compiler which compiles the source code written in C-- language(which is a subset of C) into aarch64 assembly code.
+cmm (C minus minus) is a compiler which compiles the source code written in C-- language(which is a subset of C) into aarch64 assembly code.
 It's a project of the introductory compiler course in NTU.
 
 ## Informal Specification of C--
 
-C-- is based on ANSI C standard, thus only the differences are list below.
+C-- is based on ANSI C standard, thus only the differences are listed below.
 
 ### Types
 C-- onlys support five types, which are :
@@ -21,16 +21,16 @@ Only support the following operators:
 `+`, `-`, `*`, `/`, `!`, `&&`, `||`, `[]`(array subscription), `()`(function call)
 
 ### Syntax
+* Functions without arguments should keep the parameter list empty instead of placing `void`.
 * Does not support any type qualifier.
 * Does not support assignment expression as rvalue.
 * Entry point is `MAIN` instead of `main`.
-* Does not support `switch-case`, `do-while`, `break`, `continue`, `goto`.
 * Function declaration and definition should not be seperated.
 * All declarations should be placed in the front of the block.
 * Does not support array initialization.
 * No explicit type conversion, but implicity conversion between int and float is allowed.
 * Max dimension of array is 10.
-* `for`, `while`, `if`, `else` should all followed by a block (`{`, `}`)
+* Only support following control structures : `for`, `while`, `if`, `else`.
 
 ### IO functions
 There are five functions provided for IO operations:
@@ -76,12 +76,12 @@ Run
 ```
 $ ./parser input_file
 ```
-The output file we be named output.s, which contains the aarch64 assembly.
+The output file we be named `output.s`, which contains the aarch64 assembly.
 
 `output.s` isn't self contained, it has to be compiled with `main.S`, which is a wrapper file provding IO rountines and entry loading for the compiled file.
 
 So, then use
 ```
-$ aarch64-linux-gnu-gdb -static main.S
+$ aarch64-linux-gnu-gcc -static main.S
 ```
-to compiler the program, it will pulled in `output.s` and produce an aarch64 binary, then you may test the static binary with qemu-aarch64.
+to compiler the program, it will pulled in `output.s` and produce an aarch64 binary, then you may test the static binary with `qemu-aarch64`.
