@@ -8,7 +8,7 @@ It's a project of the introductory compiler course in NTU.
 C-- is based on ANSI C standard, thus only the differences are listed below.
 
 ### Types
-C-- onlys support five types, which are :
+C-- only support five types, which are :
 * `int` - signed integer - 4 bytes
 * `float` - single percision floating pointer number - 4 bytes
 * `string literal` - ascii string terminated with NULL byte, 1 byte for each character
@@ -48,7 +48,7 @@ There are five functions provided for IO operations:
 ## Application Binary Interface
 The cmm ABI is designed roughly based on the Aarch64 ABI, with some slightly diffences:
 * Parameter passing using stack instead of register, only write() will use `s0`, `x0`, `w0`.
-* compiler has implement the caller/callee register category.
+* Compiler has implement the caller/callee register convention.
 
 ### Stack frame layout
 ```
