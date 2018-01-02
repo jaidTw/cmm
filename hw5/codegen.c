@@ -167,9 +167,9 @@ static __inline__ void genWrite(int reg, DATA_TYPE type) {
         type == INT_TYPE ? "int" : type == FLOAT_TYPE ? "float" : "str");
 }
 
-#define GEN_FCVTAS(node, conv) { \
+#define GEN_FCVTZS(node, conv) { \
     int tmp = allocReg(int, conv); \
-    GEN_CODE("fcvtas w%d, s%d", tmp, node->place); \
+    GEN_CODE("fcvtzs w%d, s%d", tmp, node->place); \
     freeReg(node->place, float); \
     node->place = tmp; \
     node->dataType = INT_TYPE; \
@@ -484,7 +484,7 @@ void genReturnStmt(AST_NODE *node) {
     genExprRelatedNode(val);
     if(_return_type != val->dataType) {
         if(_return_type == INT_TYPE) {
-            GEN_FCVTAS(val, callee);
+            GEN_FCVTZS(val, callee);
         } else {
             GEN_SCVTF(val, callee);
         }
@@ -928,7 +928,7 @@ void genAssignmentStmt(AST_NODE *node) {
     genExprRelatedNode(rhs);
     if(lhs->dataType != rhs->dataType) {
         if(lhs->dataType == INT_TYPE) {
-            GEN_FCVTAS(rhs, caller);
+            GEN_FCVTZS(rhs, caller);
         } else {
             GEN_SCVTF(rhs, caller);
         }
@@ -1022,7 +1022,7 @@ void genPrologue() {
         offset += 8;
     }
     for(CALLEE_SAVED(i, float)) {
-        GEN_CODE("str s%d, [sp, #%d]", i, offset);
+        GEN_CODE("str d%d, [sp, #%d]", i, offset);
         offset += 8;
     }
     offset -= 8;
@@ -1040,7 +1040,7 @@ void genEpilogue() {
         offset += 8;
     }
     for(CALLEE_SAVED(i, float)) {
-        GEN_CODE("ldr s%d, [sp, #%d]", i, offset);
+        GEN_CODE("ldr d%d, [sp, #%d]", i, offset);
         offset += 8;
     }
 
@@ -1095,7 +1095,7 @@ int __evalPrameter(Parameter* param, AST_NODE* arg, int start_offset) {
             if(arg->dataType == INT_TYPE) {
                 GEN_SCVTF(arg, callee);
             } else {
-                GEN_FCVTAS(arg, callee);
+                GEN_FCVTZS(arg, callee);
             }
         }
     }
