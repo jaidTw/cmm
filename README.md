@@ -80,8 +80,8 @@ The output file we be named `output.s`, which contains the aarch64 assembly.
 
 `output.s` isn't self contained, it has to be compiled with `main.S`, which is a wrapper file provding IO rountines and entry loading for the compiled file.
 
-So, then use
+So, use
 ```
 $ aarch64-linux-gnu-gcc -static main.S
 ```
-to compiler the program, it will pulled in `output.s` and produce an aarch64 binary, then you may test the static binary with `qemu-aarch64`.
+to compile the program, it will pulled in `output.s` and produce an aarch64 binary, then you may test the static binary with `qemu-aarch64`.
